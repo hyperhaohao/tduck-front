@@ -24,7 +24,9 @@ h = (function () {
     } else {
       timer = null
     }
-    document.getElementById('inActiveTime').innerText = inActiveTime
+    // 路由切换后填报页可能已经卸载，计时回调不再写入已移除的节点。
+    const target = document.getElementById('inActiveTime')
+    if (target) target.innerText = inActiveTime
   }
 
   return {
