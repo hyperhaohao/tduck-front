@@ -33,7 +33,9 @@ module.exports = {
     resolve: {
       alias: {
         '@': resolve('src'),
-        'tduck-form-generator$': path.resolve(__dirname, '../tduck-front-full/src/formgen/src/index.js')
+        ...(fs.existsSync(path.resolve(__dirname, '../tduck-front-full/src/formgen/src/index.js'))
+          ? { 'tduck-form-generator$': path.resolve(__dirname, '../tduck-front-full/src/formgen/src/index.js') }
+          : {})
       }
     }
   },

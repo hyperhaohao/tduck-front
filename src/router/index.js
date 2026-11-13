@@ -1,6 +1,7 @@
 import Vue from 'vue'
 import Router from 'vue-router'
 import store from '@/store/index'
+import { refreshDemand } from '@/utils/demand'
 import NProgress from 'nprogress'
 import 'nprogress/nprogress.css' // progress bar style
 
@@ -44,15 +45,33 @@ Router.prototype.replace = function replace(location) {
   return originalReplace.call(this, location).catch((err) => err)
 }
 
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   NProgress.start()
+  const legacyConsole =
+    /^\/(home|manage)(\/|$)/.test(to.path) ||
+    (/^\/project\//.test(to.path) &&
+      !['/project/write', '/project/form/view', '/project/public/result'].includes(to.path))
+  if (legacyConsole && store.getters['user/isLogin']) {
+    try {
+      const permissions = await refreshDemand()
+      if (permissions.enabled && !permissions.admin) {
+        next('/demand/home')
+        NProgress.done()
+        return
+      }
+    } catch (e) {
+      next('/demand/home')
+      NProgress.done()
+      return
+    }
+  }
   if (to.meta.requireLogin) {
     if (store.getters['user/isLogin']) {
       next()
       NProgress.done()
     } else {
       next({
-        path: '/login',
+        path: to.path.startsWith('/demand') ? '/login/entry' : '/login',
         query: {
           redirect: to.fullPath
         }

@@ -30,7 +30,7 @@ api.interceptors.request.use((request) => {
    * 全局拦截请求发送前提交的参数
    * 以下代码为示例，在登录状态下，分别对 post 和 get 请求加上 token 参数
    */
-  if (store.getters['user/isLogin']) {
+  if (!request.skipAuthentication && store.getters['user/isLogin']) {
     request.headers.token = store.state.user.token
   }
   signRequest(request)
@@ -66,7 +66,7 @@ api.interceptors.response.use(
     if (response.headers['content-disposition']) {
       return response
     }
-    let errCodes = [500, 405, 403]
+    let errCodes = [500, 405, 403, 409, 429]
     const res = response.data
     if (res.code === 200) {
       return Promise.resolve(res)

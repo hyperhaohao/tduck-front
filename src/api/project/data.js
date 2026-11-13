@@ -6,7 +6,7 @@ export const viewFormResultRequest = (formKey) => getRequest(`/user/form/data/vi
 // 保存表单结果数据
 export const createFormResultRequest = (data) => postRequest('/user/form/data/create', data)
 // 保存公开表单结果数据
-export const publicCreateFormResultRequest = (data) => postRequest('/user/form/data/public/create', data)
+export const publicCreateFormResultRequest = (data) => request({ url: '/user/form/data/public/create', method: 'post', data, skipAuthentication: data.demandAnonymous === true })
 // 查询数据列表
 export const listFormDataTableRequest = (data) => postRequest('/user/form/data/query', data)
 // 查询数据详情

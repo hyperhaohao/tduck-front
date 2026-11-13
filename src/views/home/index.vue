@@ -8,6 +8,7 @@
         </div>
       </div>
       <div class="right-header">
+        <el-button type="text" @click="$router.push('/demand/home')">用户首页</el-button>
         <!-- 高级玻璃拟态用户头像与下拉框 -->
         <el-popover placement="bottom-end" trigger="click" width="200" popper-class="premium-user-popover">
           <div class="user-person-menu">

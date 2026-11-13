@@ -23,3 +23,8 @@ yarn-error.log*
 *.sln
 *.sw*
 src/views/account/ForgetPwd.vue
+
+# 本地测试输出及身份配置
+playwright-report/
+test-results/
+*.local.yml
