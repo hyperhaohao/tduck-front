@@ -139,6 +139,15 @@
               ><el-option v-for="user in candidates" :key="user.id" :label="user.name" :value="user.id" /></el-select
             ><el-button @click="addMember">添加</el-button>
           </div>
+          <div class="member-bulk-bar">
+            <el-checkbox v-model="selectAllFill" :indeterminate="fillIndeterminate" :disabled="!memberRows.length"
+              >全选可填报</el-checkbox
+            ><el-checkbox v-model="selectAllHandle" :indeterminate="handleIndeterminate" :disabled="!memberRows.length"
+              >全选可经办</el-checkbox
+            ><el-button type="primary" :loading="bulkSaving" :disabled="!memberRows.length" @click="saveAllMembers"
+              >一键保存</el-button
+            >
+          </div>
           <div v-for="member in memberRows" :key="member.userId" class="member-row">
             <strong>{{ member.name }}</strong>
             <div class="member-flags">
@@ -185,6 +194,7 @@ export default {
       allowed: false,
       loading: false,
       saving: false,
+      bulkSaving: false,
       forms: [],
       keyword: '',
       tab: 'forms',
@@ -218,6 +228,32 @@ export default {
     },
     drawerWidth() {
       return this.mobile ? '100%' : '560px'
+    },
+    selectAllFill: {
+      get() {
+        return this.memberRows.length > 0 && this.memberRows.every((m) => m.canFill)
+      },
+      set(value) {
+        this.memberRows.forEach((m) => {
+          m.canFill = value
+        })
+      }
+    },
+    selectAllHandle: {
+      get() {
+        return this.memberRows.length > 0 && this.memberRows.every((m) => m.canHandle)
+      },
+      set(value) {
+        this.memberRows.forEach((m) => {
+          m.canHandle = value
+        })
+      }
+    },
+    fillIndeterminate() {
+      return !this.selectAllFill && this.memberRows.some((m) => m.canFill)
+    },
+    handleIndeterminate() {
+      return !this.selectAllHandle && this.memberRows.some((m) => m.canHandle)
     }
   },
   watch: {
@@ -325,6 +361,27 @@ export default {
         this.saving = false
       }
     },
+    async saveAllMembers() {
+      if (!this.memberRows.length) return this.$message.warning('请先添加成员')
+      this.bulkSaving = true
+      let saved = 0
+      let failed = 0
+      try {
+        for (const member of this.memberRows) {
+          try {
+            await api.saveMember(this.selected.formKey, member.userId, member)
+            saved++
+          } catch (e) {
+            failed++
+          }
+        }
+        if (failed) this.$message.warning(`已保存 ${saved} 人，${failed} 人保存失败，请重试`)
+        else this.$message.success('成员权限已保存')
+        window.dispatchEvent(new Event('demand-updated'))
+      } finally {
+        this.bulkSaving = false
+      }
+    },
     async openRoles() {
       this.roleRows = (await api.admins()).data
       await this.searchUsers('')
@@ -386,6 +443,20 @@ export default {
   gap: 12px;
   margin: 24px 0;
 }
+.member-bulk-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid #ebeef5;
+}
+.member-bulk-bar .el-checkbox {
+  margin: 0;
+}
+.member-bulk-bar .el-button {
+  margin-left: auto;
+}
 .member-row {
   padding: 16px 0;
   border-bottom: 1px solid #ebeef5;
@@ -413,6 +484,10 @@ export default {
   }
   .member-picker {
     flex-wrap: wrap;
+  }
+  .member-bulk-bar .el-button {
+    width: 100%;
+    margin-left: 0;
   }
 }
 </style>

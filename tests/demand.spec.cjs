@@ -88,6 +88,18 @@ test('write defaults to login and anonymous mode is optional', async ({ page }) 
 test('login page only presents login and administrator configuration opens on mobile', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 }); await login(page); await mockApi(page); await page.goto('/login/entry'); await expect(page.getByRole('button', { name: '登录', exact: true })).toBeVisible(); await expect(page.getByText(/Casdoor/i)).toHaveCount(0); await noOverflow(page)
   await page.goto('/demand/admin'); await expect(page.getByRole('heading', { name: '后台管理' })).toBeVisible(); await page.getByRole('button', { name: '收集配置' }).first().click(); await expect(page.getByText('允许匿名填写', { exact: true })).toBeVisible(); await noOverflow(page)
+  await page.reload(); await expect(page.getByRole('heading', { name: '后台管理' })).toBeVisible(); await page.getByRole('button', { name: '成员权限' }).first().click(); await expect(page.getByText('全选可填报', { exact: true })).toBeVisible(); await noOverflow(page)
+})
+test('admin member drawer supports column select-all and one-click save', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 }); await login(page); await mockApi(page)
+  let saves = 0; page.on('request', req => { if (req.method() === 'POST' && req.url().includes('/demand-api/admin/forms/A/members/30')) saves++ })
+  await page.goto('/demand/admin'); await expect(page.getByRole('heading', { name: '后台管理' })).toBeVisible(); await page.getByRole('button', { name: '成员权限' }).first().click()
+  const drawer = page.locator('.demand-detail-drawer'); await expect(drawer.locator('.member-row strong').first()).toHaveText('测试经办人')
+  const fillAll = drawer.locator('.member-bulk-bar .el-checkbox').first(); const handleAll = drawer.locator('.member-bulk-bar .el-checkbox').nth(1)
+  await expect(fillAll).toHaveClass(/is-checked/); await expect(handleAll).toHaveClass(/is-checked/)
+  await fillAll.click(); await expect(fillAll).not.toHaveClass(/is-checked/); await expect(drawer.locator('.member-row .el-checkbox').first()).not.toHaveClass(/is-checked/)
+  await fillAll.click(); await expect(fillAll).toHaveClass(/is-checked/)
+  await drawer.getByRole('button', { name: '一键保存' }).click(); await expect(page.getByText('成员权限已保存', { exact: true })).toBeVisible(); expect(saves).toBe(1); await noOverflow(page); await page.screenshot({ path: 'test-results/admin-member-bulk.png', fullPage: true, animations: 'disabled' })
 })
 
 test('small phone at 320px keeps navigation and detail within viewport', async ({ page }) => {
