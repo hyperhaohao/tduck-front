@@ -72,11 +72,13 @@ api.interceptors.response.use(
       return Promise.resolve(res)
     } else if (errCodes.includes(res.code)) {
       // 这里做错误提示，如果使用了 element ui 则可以使用 Message 进行提示
-      Message({
-        message: res.msg || 'Error',
-        type: 'error',
-        duration: 5 * 1000
-      })
+      if (!response.config.silent) {
+        Message({
+          message: res.msg || 'Error',
+          type: 'error',
+          duration: 5 * 1000
+        })
+      }
       return Promise.reject(res)
     } else if (res.code === 401) {
       // 有一个接口进入该方法 其他接口则不在进入
@@ -114,11 +116,13 @@ api.interceptors.response.use(
     return Promise.resolve(res)
   },
   (error) => {
-    Message({
-      message: '服务开小差了，请稍后再试',
-      type: 'error',
-      duration: 5 * 1000
-    })
+    if (!error.config || !error.config.silent) {
+      Message({
+        message: '服务开小差了，请稍后再试',
+        type: 'error',
+        duration: 5 * 1000
+      })
+    }
     return Promise.reject(error)
   }
 )

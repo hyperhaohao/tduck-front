@@ -135,8 +135,14 @@
             }}</el-button>
           </div>
         </section>
-        <section v-if="detail.canAssign" class="detail-section">
+        <section v-if="detail.canPublish || detail.canAssign" class="detail-section">
           <h3>内部公示</h3>
+          <el-alert
+            v-if="detail.publicationSkipped && !publicationPublished"
+            title="该需求已标记为不公示；仍可在此重新发布公示。"
+            type="info"
+            :closable="false"
+          />
           <p class="demand-muted">仅发布下列审核内容；不自动公开原始需求、附件和内部备注。</p>
           <el-form label-position="top"
             ><el-form-item label="公示标题"><el-input v-model="publication.title" maxlength="200" /></el-form-item
@@ -145,13 +151,22 @@
             ><el-form-item label="正式说明与进展"
               ><el-input v-model="publication.content" type="textarea" :rows="5" maxlength="20000" /></el-form-item
             ><el-button type="primary" :loading="saving" @click="savePublication(true)">{{
-              detail.publication && detail.publication.published ? '审核并更新公示' : '审核并发布公示'
+              publicationPublished
+                ? '审核并更新公示'
+                : detail.publicationSkipped
+                ? '重新发布公示'
+                : '审核并发布公示'
             }}</el-button
             ><el-button
-              v-if="detail.publication && detail.publication.published"
+              v-if="publicationPublished"
               :loading="saving"
               @click="savePublication(false)"
               >撤回公示</el-button
+            ><el-button
+              v-else-if="!detail.publicationSkipped"
+              :loading="saving"
+              @click="skipAction"
+              >不公示</el-button
             ></el-form
           >
         </section>
@@ -163,12 +178,13 @@
 import {
   requestDetail,
   lookup,
-  members,
+  handlers as listHandlers,
   assign,
   outcome,
   message,
   markRead,
   publish,
+  skipPublication,
   downloadAttachment
 } from '@/api/demand'
 import { decisions, progresses, implementationProgresses } from '@/utils/demand'
@@ -198,6 +214,9 @@ export default {
   computed: {
     staff() {
       return this.detail && this.detail.canViewTable
+    },
+    publicationPublished() {
+      return !!(this.detail && this.detail.publication && this.detail.publication.published)
     },
     replies() {
       return this.detail.messages.filter((m) => ['REPLY', 'EVENT'].includes(m.kind))
@@ -264,7 +283,8 @@ export default {
         }
         const draft = this.detail.messages.find((m) => m.kind === 'DRAFT')
         this.replyText = draft ? draft.content : ''
-        if (this.detail.canAssign) this.handlers = (await members(this.detail.formKey)).data.filter((m) => m.canHandle)
+        if (this.detail.canAssign)
+          this.handlers = (await listHandlers(this.detail.formKey)).data || []
         if (!this.anonymousReceipt) {
           await markRead({ type: 'DEMAND', id: this.detail.id, version: this.detail.publicVersion })
           this.$emit('read', this.detail.id)
@@ -323,6 +343,15 @@ export default {
       return this.run(
         () => publish(this.id, { ...this.publication, published }),
         published ? '公示已发布' : '公示已撤回'
+      )
+    },
+    async skipAction() {
+      await this.$confirm('确认将这条需求标记为不公示？之后可由单据管理员重新发布。', '不公示', {
+        type: 'warning'
+      })
+      return this.run(
+        () => skipPublication(this.id, { revision: this.detail.revision }),
+        '已记录为不公示'
       )
     },
     notify() {

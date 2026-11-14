@@ -42,32 +42,63 @@
             :key="key"
             :label="label"
             :value="key" /></el-select
-        ><el-button type="primary" icon="el-icon-search" @click="search">查询</el-button
-        ><el-button @click="reset">重置</el-button>
+        ><el-date-picker
+          v-model="submitRange"
+          type="daterange"
+          value-format="yyyy-MM-dd"
+          range-separator="至"
+          start-placeholder="提报开始"
+          end-placeholder="提报结束"
+          unlink-panels
+        /><el-button type="primary" icon="el-icon-search" @click="search">查询</el-button
+        ><el-button @click="reset">重置</el-button
+        ><el-button icon="el-icon-download" :loading="exporting" @click="exportExcel">导出 Excel</el-button>
       </div>
-      <el-table class="demand-list-desktop" :data="rows" empty-text="暂无需求" @row-click="open">
-        <el-table-column label="需求" min-width="230"
+      <div v-if="batchEnabled && selectedRows.length" class="demand-batch-bar">
+        <span class="demand-muted">已选 {{ selectedRows.length }} 条</span>
+        <el-button v-if="batchCanManage" size="small" @click="openBatchAssign">批量分派</el-button>
+        <el-button v-if="batchCanManage" size="small" @click="batchPublish">批量公示</el-button>
+        <el-button v-if="batchCanManage" size="small" @click="batchSkip">批量跳过公示</el-button>
+        <el-button type="primary" size="small" @click="openBatchOutcome">批量更新结果</el-button>
+        <el-button type="text" size="small" @click="clearSelection">取消选择</el-button>
+      </div>
+      <el-table
+        ref="table"
+        class="demand-list-desktop demand-table-compact"
+        :data="rows"
+        empty-text="暂无需求"
+        @row-click="rowClick"
+        @selection-change="selectionChanged"
+      >
+        <el-table-column v-if="batchEnabled" type="selection" width="34" />
+        <el-table-column label="需求" min-width="120"
           ><template slot-scope="s"
-            ><div class="request-title">
+            ><div class="request-title" :title="s.row.title">
               {{ s.row.title }} <el-tag v-if="!pending && s.row.unread" type="danger" size="mini">未读</el-tag>
+              <el-tag v-if="s.row.publicationPublished" type="success" size="mini">已公示</el-tag>
+              <el-tag v-else-if="s.row.publicationSkipped" type="info" size="mini">不公示</el-tag>
+              <el-tag v-else-if="pending && s.row.decision !== 'REJECTED' && s.row.progress !== 'COMPLETED'" type="warning" size="mini">待公示</el-tag>
             </div>
-            <small class="demand-muted">{{ s.row.requestNo }} · {{ plain(s.row.formName) }}</small></template
+            <small class="demand-muted request-meta" :title="meta(s.row)">{{ meta(s.row) }}</small></template
           ></el-table-column
         >
-        <el-table-column v-if="pending" prop="submitterName" label="填报者" width="100" /><el-table-column
+        <el-table-column v-if="pending" prop="submitterName" label="填报者" width="72" class-name="nowrap-cell" /><el-table-column
           prop="handlerName"
           label="经办人"
-          width="100"
+          width="82"
+          class-name="nowrap-cell"
         />
-        <el-table-column label="采纳结果" width="100"
+        <el-table-column label="采纳结果" width="76"
           ><template slot-scope="s"
             ><el-tag :type="tag(s.row.decision)" size="small">{{ decisions[s.row.decision] }}</el-tag></template
           ></el-table-column
-        ><el-table-column label="实施进度" width="100"
+        ><el-table-column label="实施进度" width="72"
           ><template slot-scope="s">{{ progresses[s.row.progress] }}</template></el-table-column
-        ><el-table-column label="提交时间" width="150"
+        ><el-table-column label="提报时间" width="116"
           ><template slot-scope="s">{{ date(s.row.createTime) }}</template></el-table-column
-        ><el-table-column label="操作" width="75"
+        ><el-table-column label="回复时间" width="116"
+          ><template slot-scope="s">{{ date(s.row.replyTime) }}</template></el-table-column
+        ><el-table-column v-if="wide" label="操作" width="64"
           ><template slot-scope="s"
             ><el-button type="text" @click.stop="open(s.row)">查看</el-button></template
           ></el-table-column
@@ -78,10 +109,15 @@
           <h3>{{ row.title }} <el-tag v-if="!pending && row.unread" type="danger" size="mini">未读</el-tag></h3>
           <small class="demand-muted">{{ row.requestNo }}</small>
           <p>{{ plain(row.formName) }} · {{ row.handlerName || '待分派' }}</p>
+          <p class="demand-muted request-time">
+            提报 {{ date(row.createTime) }}<span v-if="row.replyTime"> · 回复 {{ date(row.replyTime) }}</span>
+          </p>
           <div class="demand-card-footer">
             <div class="demand-tags">
               <el-tag :type="tag(row.decision)" size="small">{{ decisions[row.decision] }}</el-tag
-              ><el-tag v-if="row.progress !== 'NONE'" type="info" size="small">{{ progresses[row.progress] }}</el-tag>
+              ><el-tag v-if="row.progress !== 'NONE'" type="info" size="small">{{ progresses[row.progress] }}</el-tag
+              ><el-tag v-if="row.publicationPublished" type="success" size="small">已公示</el-tag
+              ><el-tag v-else-if="row.publicationSkipped" type="info" size="small">不公示</el-tag>
             </div>
             <el-button type="text" @click.stop="open(row)">查看</el-button>
           </div>
@@ -96,18 +132,89 @@
         :pager-count="5"
         @current-change="load"
       />
+      <el-dialog
+        title="批量分派"
+        :visible.sync="batchAssignVisible"
+        :width="dialogWidth"
+        :close-on-click-modal="false"
+      >
+        <p class="demand-muted">已选 {{ selectedRows.length }} 条需求，将统一分派给：</p>
+        <el-select v-model="batchHandlerId" filterable clearable placeholder="选择已授权经办人" style="width: 100%">
+          <el-option v-for="member in batchHandlers" :key="member.userId" :label="member.name" :value="member.userId" />
+        </el-select>
+        <span slot="footer"
+          ><el-button @click="batchAssignVisible = false">取消</el-button
+          ><el-button type="primary" :loading="batchBusy" @click="saveBatchAssign">确认分派</el-button></span
+        >
+      </el-dialog>
+      <el-dialog
+        title="批量更新结果"
+        :visible.sync="batchOutcomeVisible"
+        :width="dialogWidth"
+        :close-on-click-modal="false"
+      >
+        <p class="demand-muted">将同一采纳结果与实施进度应用到已选 {{ selectedRows.length }} 条需求。</p>
+        <el-form label-position="top"
+          ><el-form-item label="采纳结果"
+            ><el-select v-model="batchOutcome.decision" style="width: 100%" @change="batchDecisionChanged"
+              ><el-option v-for="(label, key) in decisions" :key="key" :label="label" :value="key" /></el-select></el-form-item
+          ><el-form-item label="采纳结果说明"
+            ><el-input v-model="batchOutcome.reason" type="textarea" :rows="3" maxlength="10000" /></el-form-item
+          ><el-form-item v-if="batchOutcome.decision === 'ACCEPTED'" label="实施进度"
+            ><el-select v-model="batchOutcome.progress" style="width: 100%"
+              ><el-option
+                v-for="(label, key) in implementationProgresses"
+                :key="key"
+                :label="label"
+                :value="key" /></el-select></el-form-item
+          ><el-form-item
+            v-if="batchOutcome.decision === 'ACCEPTED' && batchOutcome.progress === 'COMPLETED'"
+            label="完成说明"
+            ><el-input v-model="batchOutcome.completion" type="textarea" :rows="3" maxlength="10000" /></el-form-item
+        ></el-form>
+        <span slot="footer"
+          ><el-button @click="batchOutcomeVisible = false">取消</el-button
+          ><el-button type="primary" :loading="batchBusy" @click="saveBatchOutcome">确认更新</el-button></span
+        >
+      </el-dialog>
+      <el-dialog title="批量处理结果" :visible.sync="batchResultVisible" :width="dialogWidth">
+        <p>
+          成功 {{ batchResult.success }} 条<span v-if="batchResult.skipped">，跳过 {{ batchResult.skipped }} 条</span
+          ><span v-if="batchResult.failed">，失败 {{ batchResult.failed }} 条</span>
+        </p>
+        <ul v-if="batchResult.items.length" class="batch-failures">
+          <li v-for="(item, index) in batchResult.items" :key="index">
+            <strong>{{ item.title }}</strong
+            >：{{ item.msg }}
+          </li>
+        </ul>
+        <span slot="footer"
+          ><el-button type="primary" @click="batchResultVisible = false">知道了</el-button></span
+        >
+      </el-dialog>
     </template>
     <demand-detail ref="detail" @updated="afterUpdate" @read="readRow" />
   </section>
 </template>
 <script>
-import { listRequests, requestSummary } from '@/api/demand'
-import { decisions, progresses, implementationProgresses } from '@/utils/demand'
+import {
+  listRequests,
+  requestSummary,
+  exportRequests,
+  assign,
+  outcome,
+  handlers as listHandlers,
+  autoPublish,
+  skipPublication
+} from '@/api/demand'
+import { decisions, progresses, implementationProgresses, demandState } from '@/utils/demand'
 import DemandDetail from './components/DemandDetail'
 import FormOverview from './components/FormOverview'
+import exportMixin from './exportMixin'
 export default {
   name: 'DemandRequests',
   components: { DemandDetail, FormOverview },
+  mixins: [exportMixin],
   data() {
     return {
       rows: [],
@@ -123,7 +230,20 @@ export default {
       formsLoading: false,
       selectedFormKey: '',
       selectedFormName: '',
-      query: { keyword: '', decision: '', progress: '', formKey: '', handlerId: '', page: 1, size: 20 }
+      selectedFormManage: false,
+      submitRange: [],
+      query: { keyword: '', decision: '', progress: '', formKey: '', handlerId: '', page: 1, size: 20 },
+      mobile: window.innerWidth < 768,
+      wide: window.innerWidth >= 1200,
+      selectedRows: [],
+      batchBusy: false,
+      batchAssignVisible: false,
+      batchHandlerId: '',
+      batchHandlers: [],
+      batchOutcomeVisible: false,
+      batchOutcome: { decision: 'ACCEPTED', progress: 'PLANNED', reason: '', completion: '' },
+      batchResultVisible: false,
+      batchResult: { label: '', success: 0, skipped: 0, failed: 0, items: [] }
     }
   },
   computed: {
@@ -143,13 +263,37 @@ export default {
       const keyword = this.formKeyword.trim()
       if (!keyword) return this.formSummaries
       return this.formSummaries.filter((form) => this.plain(form.formName).includes(keyword))
+    },
+    batchCanManage() {
+      return this.selectedFormManage || demandState.admin
+    },
+    batchEnabled() {
+      return (
+        this.pending &&
+        this.scope === 'pending' &&
+        !!this.selectedFormKey &&
+        (demandState.admin || demandState.manage || demandState.handler)
+      )
+    },
+    dialogWidth() {
+      return this.mobile ? '94%' : '520px'
     }
   },
   async created() {
     await this.loadView()
     if (this.$route.query.id) this.$refs.detail.open(this.$route.query.id)
   },
+  mounted() {
+    window.addEventListener('resize', this.resize)
+  },
+  beforeDestroy() {
+    window.removeEventListener('resize', this.resize)
+  },
   methods: {
+    resize() {
+      this.mobile = window.innerWidth < 768
+      this.wide = window.innerWidth >= 1200
+    },
     async loadView() {
       if (this.selectedFormKey) await this.load()
       else await this.loadForms()
@@ -169,9 +313,18 @@ export default {
       this.loading = true
       this.error = ''
       try {
-        const r = await listRequests({ ...this.query, scope: this.scope })
+        const r = await listRequests({
+          ...this.query,
+          submitStart: this.submitRange[0] || '',
+          submitEnd: this.submitRange[1] || '',
+          scope: this.scope
+        })
         this.rows = r.data.rows
         this.total = r.data.total
+        this.selectedRows = []
+        this.$nextTick(() => {
+          if (this.$refs.table) this.$refs.table.clearSelection()
+        })
       } catch (e) {
         this.error = e.msg || '需求加载失败，请重试。'
       } finally {
@@ -181,6 +334,7 @@ export default {
     selectForm(item) {
       this.selectedFormKey = item.formKey
       this.selectedFormName = this.plain(item.formName)
+      this.selectedFormManage = !!item.canManage || demandState.admin
       this.query.formKey = item.formKey
       this.query.page = 1
       this.load()
@@ -188,15 +342,19 @@ export default {
     backToForms() {
       this.selectedFormKey = ''
       this.selectedFormName = ''
+      this.selectedFormManage = false
       this.query.formKey = ''
       this.query.page = 1
+      this.resetBatch()
       this.loadForms()
     },
     scopeChanged() {
       this.selectedFormKey = ''
       this.selectedFormName = ''
+      this.selectedFormManage = false
       this.query.formKey = ''
       this.query.page = 1
+      this.resetBatch()
       this.loadForms()
     },
     afterUpdate() {
@@ -208,6 +366,7 @@ export default {
       this.load()
     },
     reset() {
+      this.submitRange = []
       Object.assign(this.query, { keyword: '', decision: '', progress: '', handlerId: '', page: 1 })
       this.load()
     },
@@ -217,6 +376,182 @@ export default {
     },
     open(row) {
       this.$refs.detail.open(row.id)
+    },
+    rowClick(row, column) {
+      if (column && column.type === 'selection') return
+      this.open(row)
+    },
+    selectionChanged(rows) {
+      this.selectedRows = rows
+    },
+    clearSelection() {
+      if (this.$refs.table) this.$refs.table.clearSelection()
+      this.selectedRows = []
+    },
+    resetBatch() {
+      this.selectedRows = []
+      this.batchHandlerId = ''
+      this.batchHandlers = []
+      this.batchAssignVisible = false
+      this.batchOutcomeVisible = false
+      this.batchResultVisible = false
+      this.$nextTick(() => {
+        if (this.$refs.table) this.$refs.table.clearSelection()
+      })
+    },
+    meta(row) {
+      return `${row.requestNo || ''} · ${this.plain(row.formName)}`
+    },
+    exportExcel() {
+      const prefix = this.scope === 'table' ? '需求总表' : this.pending ? '待我处理' : '我的需求'
+      return this.saveExport(
+        () =>
+          exportRequests({
+            scope: this.scope,
+            keyword: this.query.keyword,
+            decision: this.query.decision,
+            progress: this.query.progress,
+            formKey: this.query.formKey,
+            handlerId: this.query.handlerId,
+            submitStart: this.submitRange[0] || '',
+            submitEnd: this.submitRange[1] || ''
+          }),
+        prefix
+      )
+    },
+    async openBatchAssign() {
+      if (!this.selectedRows.length) return this.$message.warning('请先选择需求')
+      try {
+        this.batchHandlers = (await listHandlers(this.selectedFormKey)).data || []
+      } catch (e) {
+        return
+      }
+      this.batchHandlerId = ''
+      this.batchAssignVisible = true
+    },
+    async saveBatchAssign() {
+      if (!this.batchHandlerId) return this.$message.warning('请选择经办人')
+      const rows = [...this.selectedRows]
+      this.batchAssignVisible = false
+      await this.runBatch('批量分派', rows, (row) =>
+        assign(row.id, { handlerId: this.batchHandlerId, revision: row.revision }, { silent: true })
+      )
+      this.clearSelection()
+    },
+    openBatchOutcome() {
+      if (!this.selectedRows.length) return this.$message.warning('请先选择需求')
+      this.batchOutcome = { decision: 'ACCEPTED', progress: 'PLANNED', reason: '', completion: '' }
+      this.batchOutcomeVisible = true
+    },
+    batchDecisionChanged(value) {
+      this.batchOutcome.progress = value === 'ACCEPTED' ? 'PLANNED' : 'NONE'
+      if (value !== 'ACCEPTED') this.batchOutcome.completion = ''
+    },
+    async saveBatchOutcome() {
+      const form = this.batchOutcome
+      if (form.decision !== 'PENDING' && !form.reason.trim())
+        return this.$message.warning('请填写采纳结果说明')
+      if (form.decision === 'ACCEPTED' && !form.progress) return this.$message.warning('请选择实施进度')
+      if (form.decision === 'ACCEPTED' && form.progress === 'COMPLETED' && !form.completion.trim())
+        return this.$message.warning('请填写完成说明')
+      const rows = [...this.selectedRows]
+      this.batchOutcomeVisible = false
+      await this.runBatch('批量更新结果', rows, (row) =>
+        outcome(
+          row.id,
+          {
+            decision: form.decision,
+            progress: form.decision === 'ACCEPTED' ? form.progress : 'NONE',
+            reason: form.reason,
+            completion: form.decision === 'ACCEPTED' ? form.completion : '',
+            revision: row.revision
+          },
+          { silent: true }
+        )
+      )
+      this.clearSelection()
+    },
+    async batchPublish() {
+      const selected = [...this.selectedRows]
+      const rows = selected.filter((row) => !row.publicationPublished)
+      const preSkipped = selected.length - rows.length
+      if (!rows.length) return this.$message.info('所选需求均已公示')
+      try {
+        await this.$confirm(
+          `将自动使用需求标题、采纳说明和最近正式回复生成并发布 ${rows.length} 条公示，已公示的 ${preSkipped} 条将跳过。是否继续？`,
+          '批量公示',
+          { type: 'warning' }
+        )
+      } catch (e) {
+        return
+      }
+      await this.runBatch(
+        '批量公示',
+        rows,
+        (row) => autoPublish(row.id, { revision: row.revision }, { silent: true }),
+        preSkipped
+      )
+      this.clearSelection()
+    },
+    async batchSkip() {
+      const selected = [...this.selectedRows]
+      const rows = selected.filter((row) => !row.publicationPublished && !row.publicationSkipped)
+      const preSkipped = selected.length - rows.length
+      if (!rows.length) return this.$message.info('所选需求均已公示或已跳过')
+      try {
+        await this.$confirm(
+          `将 ${rows.length} 条需求标记为不公示并移出待办，已公示或已跳过的 ${preSkipped} 条将跳过。是否继续？`,
+          '批量跳过公示',
+          { type: 'warning' }
+        )
+      } catch (e) {
+        return
+      }
+      await this.runBatch(
+        '批量跳过公示',
+        rows,
+        (row) => skipPublication(row.id, { revision: row.revision }, { silent: true }),
+        preSkipped
+      )
+      this.clearSelection()
+    },
+    async runBatch(label, rows, action, preSkipped = 0) {
+      this.batchBusy = true
+      let success = 0
+      let skipped = preSkipped
+      let failed = 0
+      let expired = false
+      const items = []
+      try {
+        for (const row of rows) {
+          try {
+            const result = await action(row)
+            const data = result && result.data
+            if (data && (data.unchanged === true || data.changed === false)) skipped++
+            else success++
+          } catch (e) {
+            if (e && e.code === 401) {
+              expired = true
+              break
+            }
+            failed++
+            items.push({ title: row.title, msg: (e && e.msg) || '操作失败' })
+          }
+        }
+      } finally {
+        this.batchBusy = false
+      }
+      await this.load()
+      window.dispatchEvent(new Event('demand-updated'))
+      if (expired) return this.$message.error('登录已过期，请重新登录后继续')
+      if (failed) {
+        this.batchResult = { label, success, skipped, failed, items }
+        this.batchResultVisible = true
+      } else {
+        this.$message.success(
+          `${label}完成：成功 ${success} 条${skipped ? `，跳过 ${skipped} 条` : ''}`
+        )
+      }
     },
     plain(v) {
       return new DOMParser().parseFromString(v || '', 'text/html').body.textContent || ''
@@ -245,5 +580,30 @@ export default {
   font-size: 18px;
   font-weight: 600;
   overflow-wrap: anywhere;
+}
+.demand-batch-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 14px;
+  margin: 0 0 12px;
+  background: #f7f8fa;
+  border: 1px solid #ebeef5;
+  border-radius: 10px;
+}
+.demand-batch-bar .el-button {
+  margin: 0;
+}
+.batch-failures {
+  padding-left: 20px;
+  line-height: 1.9;
+  max-height: 220px;
+  overflow: auto;
+}
+@media (max-width: 767px) {
+  .demand-batch-bar {
+    display: none;
+  }
 }
 </style>

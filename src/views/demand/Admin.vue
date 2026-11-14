@@ -38,47 +38,106 @@
           </div>
           <el-empty v-if="!filtered.length" description="暂无收集单，请先新建" /></el-tab-pane
         ><el-tab-pane label="需求总表与公示审核" name="table"
-          ><div class="demand-toolbar">
-            <el-input v-model="tableKeyword" placeholder="搜索需求" @keyup.enter.native="loadTable" /><el-button
-              type="primary"
-              @click="loadTable"
-              >查询</el-button
+          ><template v-if="!selectedTableFormKey">
+            <div class="demand-toolbar">
+              <el-input
+                v-model="tableFormKeyword"
+                placeholder="搜索收集单"
+                clearable
+                prefix-icon="el-icon-search"
+              /><el-button icon="el-icon-download" :loading="exporting" @click="exportTable"
+                >导出全部</el-button
+              >
+            </div>
+            <form-overview
+              :items="filteredTableForms"
+              :loading="tableFormsLoading"
+              action-text="查看需求"
+              total-label="需求"
+              empty-text="暂无需求"
+              @select="selectTableForm"
+            />
+          </template>
+          <template v-else>
+            <el-button class="demand-back" type="text" icon="el-icon-back" @click="backToTableForms"
+              >全部收集单</el-button
             >
-          </div>
-          <el-table class="demand-list-desktop" :data="rows" @row-click="openDetail"
-            ><el-table-column prop="title" label="需求" min-width="220" /><el-table-column
-              prop="submitterName"
-              label="填报者"
-              width="100"
-            /><el-table-column prop="handlerName" label="经办人" width="100" /><el-table-column
-              label="处理状态"
-              min-width="170"
-              ><template slot-scope="s"
-                >{{ decisions[s.row.decision] }} / {{ progresses[s.row.progress] }}</template
-              ></el-table-column
-            ><el-table-column label="操作" width="100"
-              ><template slot-scope="s"
-                ><el-button type="text" @click.stop="openDetail(s.row)">分派 / 公示</el-button></template
-              ></el-table-column
-            ></el-table
-          >
-          <div class="demand-list-mobile">
-            <article v-for="row in rows" :key="row.id" class="demand-card">
-              <h3>{{ row.title }}</h3>
-              <p>{{ row.submitterName }} · {{ row.handlerName || '待分派' }}</p>
-              <div class="demand-card-footer">
-                <span>{{ decisions[row.decision] }} / {{ progresses[row.progress] }}</span
-                ><el-button type="text" @click="openDetail(row)">分派 / 公示</el-button>
-              </div>
-            </article>
-          </div>
-          <el-pagination
-            :current-page.sync="page"
-            :page-size="20"
-            :total="total"
-            layout="total, prev, pager, next"
-            :pager-count="5"
-            @current-change="loadTable" /></el-tab-pane
+            <h2 class="form-heading">{{ selectedTableFormName }}</h2>
+            <div class="demand-toolbar">
+              <el-input
+                v-model="tableKeyword"
+                placeholder="搜索需求"
+                clearable
+                @keyup.enter.native="searchTable"
+              /><el-button type="primary" @click="searchTable">查询</el-button
+              ><el-button icon="el-icon-download" :loading="exporting" @click="exportTable"
+                >导出本收集单</el-button
+              >
+            </div>
+            <el-table
+              class="demand-list-desktop demand-table-compact"
+              :data="rows"
+              empty-text="暂无需求"
+              @row-click="openDetail"
+              ><el-table-column label="需求" min-width="150"
+                ><template slot-scope="s"
+                  ><div class="request-title" :title="s.row.title">
+                    {{ s.row.title }}
+                    <el-tag v-if="s.row.publicationPublished" type="success" size="mini">已公示</el-tag>
+                    <el-tag v-else-if="s.row.publicationSkipped" type="info" size="mini">不公示</el-tag>
+                    <el-tag v-else-if="s.row.decision !== 'REJECTED' && s.row.progress !== 'COMPLETED'" type="warning" size="mini">待公示</el-tag>
+                  </div>
+                  <small class="demand-muted request-meta" :title="tableMeta(s.row)">{{
+                    tableMeta(s.row)
+                  }}</small></template
+                ></el-table-column
+              ><el-table-column
+                prop="submitterName"
+                label="填报者"
+                width="86"
+                class-name="nowrap-cell" /><el-table-column
+                prop="handlerName"
+                label="经办人"
+                width="86"
+                class-name="nowrap-cell" /><el-table-column label="处理状态" min-width="120"
+                ><template slot-scope="s"
+                  >{{ decisions[s.row.decision] }} / {{ progresses[s.row.progress] }}</template
+                ></el-table-column
+              ><el-table-column label="提报时间" width="122"
+                ><template slot-scope="s">{{ date(s.row.createTime) }}</template></el-table-column
+              ><el-table-column label="操作" width="90"
+                ><template slot-scope="s"
+                  ><el-button type="text" @click.stop="openDetail(s.row)">分派 / 公示</el-button></template
+                ></el-table-column
+              ></el-table
+            >
+            <div class="demand-list-mobile">
+              <article v-for="row in rows" :key="row.id" class="demand-card" @click="openDetail(row)">
+                <h3>{{ row.title }}</h3>
+                <small class="demand-muted">{{ tableMeta(row) }}</small>
+                <p>{{ row.submitterName }} · {{ row.handlerName || '待分派' }}</p>
+                <p class="demand-muted">提报 {{ date(row.createTime) }}</p>
+                <div class="demand-card-footer">
+                  <div class="demand-tags">
+                    <el-tag size="small">{{ decisions[row.decision] }}</el-tag
+                    ><el-tag v-if="row.publicationPublished" type="success" size="small">已公示</el-tag
+                    ><el-tag v-else-if="row.publicationSkipped" type="info" size="small">不公示</el-tag
+                    ><el-tag v-else type="warning" size="small">待公示</el-tag>
+                  </div>
+                  <el-button type="text" @click.stop="openDetail(row)">分派 / 公示</el-button>
+                </div>
+              </article>
+              <el-empty v-if="!rows.length" description="暂无需求" />
+            </div>
+            <el-pagination
+              :current-page.sync="page"
+              :page-size="20"
+              :total="total"
+              layout="total, prev, pager, next"
+              :pager-count="5"
+              @current-change="loadTable"
+            />
+          </template></el-tab-pane
       ></el-tabs>
       <el-dialog title="新建需求收集单" :visible.sync="createVisible" :width="dialogWidth" :close-on-click-modal="false"
         ><el-form label-position="top"
@@ -127,7 +186,9 @@
         custom-class="demand-detail-drawer"
         ><template v-if="selected"
           ><h3>{{ plain(selected.name) }}</h3>
-          <p class="demand-muted">填报与经办权限分别授予，可同时拥有。</p>
+          <p class="demand-muted">
+            填报、经办与管理权限分别授予，可同时拥有。创建人默认是单据管理员；单据管理员可在待我处理查看本收集单全部未办结需求，并分派、公示、跳过公示、代填处理结果。每个收集单至少保留一名单据管理员。
+          </p>
           <div class="member-picker">
             <el-select
               v-model="memberId"
@@ -144,6 +205,8 @@
               >全选可填报</el-checkbox
             ><el-checkbox v-model="selectAllHandle" :indeterminate="handleIndeterminate" :disabled="!memberRows.length"
               >全选可经办</el-checkbox
+            ><el-checkbox v-model="selectAllManage" :indeterminate="manageIndeterminate" :disabled="!memberRows.length"
+              >全选可管理</el-checkbox
             ><el-button type="primary" :loading="bulkSaving" :disabled="!memberRows.length" @click="saveAllMembers"
               >一键保存</el-button
             >
@@ -153,6 +216,7 @@
             <div class="member-flags">
               <el-checkbox v-model="member.canFill">可填报</el-checkbox
               ><el-checkbox v-model="member.canHandle">可经办</el-checkbox
+              ><el-checkbox v-model="member.canManage">可管理/可公示</el-checkbox
               ><el-button type="text" :loading="saving" @click="saveMemberRow(member)">保存</el-button>
             </div>
           </div></template
@@ -177,7 +241,7 @@
         </div>
         <p class="demand-muted">系统维护管理员及配置中指定的管理员不会因本列表撤权而失去维护权限。</p></el-drawer
       >
-      <demand-detail ref="detail" @updated="loadTable" /></template
+      <demand-detail ref="detail" @updated="afterTableUpdate" /></template
     ><el-result v-else icon="warning" title="无后台管理权限" sub-title="请使用具有管理权限的账户访问。" />
   </section>
 </template>
@@ -186,9 +250,12 @@ import * as api from '@/api/demand'
 import { createFormRequest } from '@/api/project/form'
 import { refreshDemand, decisions, progresses } from '@/utils/demand'
 import DemandDetail from './components/DemandDetail'
+import FormOverview from './components/FormOverview'
+import exportMixin from './exportMixin'
 export default {
   name: 'DemandAdmin',
-  components: { DemandDetail },
+  components: { DemandDetail, FormOverview },
+  mixins: [exportMixin],
   data() {
     return {
       allowed: false,
@@ -214,6 +281,11 @@ export default {
       page: 1,
       total: 0,
       tableKeyword: '',
+      tableFormSummaries: [],
+      tableFormKeyword: '',
+      tableFormsLoading: false,
+      selectedTableFormKey: '',
+      selectedTableFormName: '',
       mobile: window.innerWidth < 768,
       decisions,
       progresses
@@ -254,11 +326,29 @@ export default {
     },
     handleIndeterminate() {
       return !this.selectAllHandle && this.memberRows.some((m) => m.canHandle)
+    },
+    selectAllManage: {
+      get() {
+        return this.memberRows.length > 0 && this.memberRows.every((m) => m.canManage)
+      },
+      set(value) {
+        this.memberRows.forEach((m) => {
+          m.canManage = value
+        })
+      }
+    },
+    manageIndeterminate() {
+      return !this.selectAllManage && this.memberRows.some((m) => m.canManage)
+    },
+    filteredTableForms() {
+      const keyword = this.tableFormKeyword.trim()
+      if (!keyword) return this.tableFormSummaries
+      return this.tableFormSummaries.filter((form) => this.plain(form.formName).includes(keyword))
     }
   },
   watch: {
     tab(v) {
-      if (v === 'table') this.loadTable()
+      if (v === 'table') this.loadTableView()
     }
   },
   async created() {
@@ -349,9 +439,17 @@ export default {
       const user = this.candidates.find((u) => u.id === this.memberId)
       if (!user) return this.$message.warning('请选择人员')
       if (this.memberRows.some((m) => m.userId === user.id)) return this.$message.info('该人员已在列表中')
-      this.memberRows.push({ userId: user.id, name: user.name, canFill: false, canHandle: false })
+      this.memberRows.push({
+        userId: user.id,
+        name: user.name,
+        canFill: false,
+        canHandle: false,
+        canManage: false
+      })
     },
     async saveMemberRow(member) {
+      if (!this.memberRows.some((m) => m.canManage))
+        return this.$message.warning('每个收集单至少保留一名单据管理员')
       this.saving = true
       try {
         await api.saveMember(this.selected.formKey, member.userId, member)
@@ -363,11 +461,17 @@ export default {
     },
     async saveAllMembers() {
       if (!this.memberRows.length) return this.$message.warning('请先添加成员')
+      if (!this.memberRows.some((m) => m.canManage))
+        return this.$message.warning('每个收集单至少保留一名单据管理员')
       this.bulkSaving = true
       let saved = 0
       let failed = 0
       try {
-        for (const member of this.memberRows) {
+        // 先授予新管理员，再撤销旧管理员，避免中间状态触发最后一名管理员校验。
+        const ordered = [...this.memberRows].sort(
+          (a, b) => Number(!!b.canManage) - Number(!!a.canManage)
+        )
+        for (const member of ordered) {
           try {
             await api.saveMember(this.selected.formKey, member.userId, member)
             saved++
@@ -408,10 +512,76 @@ export default {
         this.saving = false
       }
     },
+    async loadTableView() {
+      if (this.selectedTableFormKey) await this.loadTable()
+      else await this.loadTableForms()
+    },
+    async loadTableForms() {
+      this.tableFormsLoading = true
+      try {
+        this.tableFormSummaries = (await api.requestSummary({ scope: 'table' })).data || []
+      } catch (e) {
+        this.tableFormSummaries = []
+      } finally {
+        this.tableFormsLoading = false
+      }
+    },
+    selectTableForm(item) {
+      this.selectedTableFormKey = item.formKey
+      this.selectedTableFormName = this.plain(item.formName)
+      this.tableKeyword = ''
+      this.page = 1
+      this.loadTable()
+    },
+    backToTableForms() {
+      this.selectedTableFormKey = ''
+      this.selectedTableFormName = ''
+      this.tableKeyword = ''
+      this.page = 1
+      this.rows = []
+      this.total = 0
+      this.loadTableForms()
+    },
+    searchTable() {
+      this.page = 1
+      this.loadTable()
+    },
     async loadTable() {
-      const r = await api.listRequests({ scope: 'table', keyword: this.tableKeyword, page: this.page, size: 20 })
-      this.rows = r.data.rows
-      this.total = r.data.total
+      if (!this.selectedTableFormKey) return
+      try {
+        const r = await api.listRequests({
+          scope: 'table',
+          keyword: this.tableKeyword,
+          formKey: this.selectedTableFormKey,
+          page: this.page,
+          size: 20
+        })
+        this.rows = r.data.rows
+        this.total = r.data.total
+      } catch (e) {
+        /* 全局拦截器已提示错误，保留当前列表。 */
+      }
+    },
+    exportTable() {
+      return this.saveExport(
+        () =>
+          api.exportRequests({
+            scope: 'table',
+            keyword: this.tableKeyword,
+            formKey: this.selectedTableFormKey
+          }),
+        '需求总表'
+      )
+    },
+    afterTableUpdate() {
+      if (this.selectedTableFormKey) this.loadTable()
+      else this.loadTableForms()
+    },
+    tableMeta(row) {
+      return `${row.requestNo || ''} · ${this.plain(row.formName)}`
+    },
+    date(value) {
+      return value ? String(value).replace('T', ' ').substring(0, 16) : ''
     },
     openDetail(row) {
       this.$refs.detail.open(row.id)

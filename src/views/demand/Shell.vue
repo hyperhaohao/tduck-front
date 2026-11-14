@@ -45,7 +45,7 @@
                   class="nav-count"
                   title="存在未读更新的需求数" /></span
             ></el-menu-item>
-            <el-menu-item v-if="logged && state.handler" index="/demand/pending"
+            <el-menu-item v-if="logged && (state.handler || state.manage)" index="/demand/pending"
               ><i class="el-icon-tickets" /><span slot="title"
                 >待我处理
                 <el-badge
@@ -127,7 +127,7 @@ export default {
           path: '/demand/pending',
           label: '待我处理：待办',
           icon: 'el-icon-tickets',
-          count: this.state.handler ? this.counts.pending : 0
+          count: this.state.handler || this.state.manage ? this.counts.pending : 0
         },
         {
           path: '/demand/publications',
@@ -193,7 +193,14 @@ export default {
     },
     async logout() {
       await this.$store.dispatch('user/logout')
-      Object.assign(this.state, { admin: false, handler: false, mineUnread: 0, pending: 0, publicationUnread: 0 })
+      Object.assign(this.state, {
+        admin: false,
+        handler: false,
+        manage: false,
+        mineUnread: 0,
+        pending: 0,
+        publicationUnread: 0
+      })
       this.$router.replace('/demand/home')
     }
   }
@@ -340,11 +347,14 @@ export default {
   flex-wrap: wrap;
   margin: 22px 0;
 }
-.demand-toolbar .el-input {
+.demand-toolbar > .el-input {
   width: 240px;
 }
-.demand-toolbar .el-select {
+.demand-toolbar > .el-select {
   width: 150px;
+}
+.demand-toolbar > .el-date-editor {
+  width: 280px;
 }
 .demand-page .el-button--primary {
   background: #3370ff;
@@ -353,6 +363,31 @@ export default {
 .demand-page .el-pagination {
   margin-top: 24px;
   white-space: normal;
+}
+.demand-table-compact .cell {
+  padding-left: 6px;
+  padding-right: 6px;
+}
+.demand-table-compact th,
+.demand-table-compact td {
+  font-size: 13px;
+}
+.demand-table-compact .nowrap-cell .cell {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.demand-table-compact .request-title,
+.demand-table-compact .request-meta {
+  display: block;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.demand-table-compact .request-title .el-tag,
+.demand-table-compact .request-meta .el-tag {
+  margin-left: 4px;
 }
 .demand-page .el-empty {
   padding: 50px 0;
@@ -485,8 +520,9 @@ export default {
   .demand-toolbar {
     gap: 10px;
   }
-  .demand-toolbar .el-input,
-  .demand-toolbar .el-select {
+  .demand-toolbar > .el-input,
+  .demand-toolbar > .el-select,
+  .demand-toolbar > .el-date-editor {
     width: 100%;
   }
   .demand-title-row {
