@@ -1,8 +1,8 @@
 <template>
   <main class="demand-login">
     <section class="login-panel">
-      <img src="@/assets/images/logo-tduck-ce.svg" alt="填鸭" />
-      <h1>瑞玛需求征集</h1>
+      <BrandLogo compact />
+      <h1>{{ $brand.name }}</h1>
       <p>提交需求，查看回复与实施进度。</p>
       <el-alert
         v-if="$route.query.failed"

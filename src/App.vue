@@ -7,6 +7,14 @@
 <script>
 import TduckForm from 'tduck-form-generator'
 import { getCurrentDomain } from '@/utils'
+import { brand, resolveSystemName } from '@/config/brand'
+function cachedName() {
+  try {
+    return resolveSystemName(JSON.parse(localStorage.getItem('systemConfig') || '{}')?.systemName)
+  } catch (e) {
+    return brand.name
+  }
+}
 
 export default {
   provide() {
@@ -16,13 +24,14 @@ export default {
   },
   data() {
     return {
-      isRouterAlive: true
+      isRouterAlive: true,
+      systemName: cachedName()
     }
   },
   watch: {
     $route: 'routeChange'
   },
-  async beforeCreate() {
+  async created() {
     window.tduckBaseUrl = process.env['VUE_APP_API_ROOT']
     if (process.env['VUE_APP_API_ROOT']) {
       localStorage.setItem(TduckForm.constant.BASE_URL, process.env['VUE_APP_API_ROOT'])
@@ -32,7 +41,9 @@ export default {
     // 获取系统配置并存储到 localStorage
     try {
       const sysRes = await this.$api.get('/public/systemInfoConfig')
-      const systemConfig = JSON.parse(sysRes.data)
+      const systemConfig = typeof sysRes.data === 'string' ? JSON.parse(sysRes.data) : sysRes.data || {}
+      systemConfig.systemName = resolveSystemName(systemConfig.systemName)
+      this.systemName = systemConfig.systemName
       localStorage.setItem('systemConfig', JSON.stringify(systemConfig))
     } catch (error) {
       console.error('获取系统配置失败:', error)
@@ -52,17 +63,9 @@ export default {
       }
     }
   },
-  metaInfo: {
-    titleTemplate: (title) => {
-      try {
-        const systemConfig = JSON.parse(localStorage.getItem('systemConfig'))
-        const systemName = systemConfig?.systemName || process.env.VUE_APP_TITLE
-        return title ? `${title} - ${systemName}` : systemName
-      } catch (error) {
-        console.error('获取系统名称失败:', error)
-        return title ? `${title} - ${process.env.VUE_APP_TITLE}` : process.env.VUE_APP_TITLE
-      }
-    }
+  metaInfo() {
+    const name = this.systemName
+    return { titleTemplate: (title) => (title ? `${title} - ${name}` : name) }
   }
 }
 </script>

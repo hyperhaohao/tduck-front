@@ -32,9 +32,7 @@
       </div>
 
       <div class="card-footer">
-        <span class="footer-text">TDUCK 数据收集系统</span>
-        <span class="footer-divider">|</span>
-        <a href="https://gitee.com/tduckapp/tduck-platform" target="_blank" class="footer-link">联系开发者</a>
+        <span class="footer-text">{{ $brand.name }}</span>
       </div>
     </div>
   </div>
@@ -59,7 +57,7 @@ export default {
 </script>
 
 <style lang="scss" scoped>
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&display=swap');
+// 内网使用系统字体，避免外部字体加载失败阻断404页面。
 
 .status-container {
   position: relative;

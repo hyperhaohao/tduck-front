@@ -6,7 +6,7 @@
           <i class="el-icon-back" />
         </div>
         <div class="logo-wrapper" @click="$router.push({ path: '/home' })">
-          <img src="@/assets/images/logo-tduck-ce.svg" alt="TDUCK Logo" class="form-logo-img" />
+          <BrandLogo />
         </div>
       </div>
       <div class="header-right">

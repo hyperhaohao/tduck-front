@@ -1,7 +1,7 @@
 <template>
   <div class="write-container">
     <div v-if="demandMeta.managed" class="demand-write-header">
-      <router-link to="/demand/home">瑞玛需求征集</router-link>
+      <router-link to="/demand/home">{{ $brand.name }}</router-link>
       <div>
         <router-link v-if="logged" to="/demand/mine">我的需求</router-link
         ><router-link to="/demand/lookup">匿名需求查询</router-link>
@@ -116,7 +116,7 @@ export default {
         formKey: '',
         preview: false,
         showBtns: true,
-        supportText: 'Powered By Tduck 填鸭表单'
+        supportText: this.$brand.footer
       },
       writeStatus: 1,
       // 不允许填写的提示信息

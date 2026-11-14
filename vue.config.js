@@ -1,7 +1,8 @@
 const path = require('path')
 const fs = require('fs')
 
-const name = process.env['VUE_APP_TITLE ']
+const { brand } = require('./src/config/brand')
+const name = brand.name
 
 function resolve(dir) {
   return path.join(__dirname, dir)
@@ -55,6 +56,15 @@ module.exports = {
     // when there are many pages, it will cause too many meaningless requests
     config.plugins.delete('prefetch')
 
+    config.module
+      .rule('brand-form-generator')
+      .test(/\.js$/)
+      .include.add(path.dirname(require.resolve('tduck-form-generator/package.json')))
+      .end()
+      .use('brand-form-generator')
+      .loader(resolve('build/brand-form-generator-loader.cjs'))
+      .end()
+
     // set svg-sprite-loader
     config.module.rule('svg').exclude.add(resolve('src/assets/icons')).end()
     config.module
@@ -71,7 +81,8 @@ module.exports = {
     config
       .plugin('html')
       .tap((args) => {
-        args[0].title = process.env.VUE_APP_TITLE
+        args[0].title = brand.name
+        args[0].brand = brand
         args[0].debugTool = process.env.VUE_APP_DEBUG_TOOL
         return args
       })

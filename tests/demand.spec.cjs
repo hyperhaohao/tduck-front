@@ -84,3 +84,21 @@ test('small phone at 320px keeps navigation and detail within viewport', async (
   await page.getByRole('button', { name: '打开导航菜单' }).click(); await expect(page.locator('.demand-sidebar')).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)'); expect((await page.locator('.demand-sidebar').boundingBox()).width).toBe(240)
   await page.getByText('我的需求', { exact: false }).first().click(); await page.locator('.demand-list-mobile').getByRole('button', { name: '查看', exact: true }).first().click(); await expect(page.locator('.demand-detail-drawer')).toBeVisible(); await noOverflow(page)
 })
+
+// 品牌回归同时覆盖旧缓存与配置异步返回，防止标题恢复成旧名称。
+test('company branding replaces cached defaults and supports custom names', async ({ page }) => {
+  await mockApi(page)
+  await page.addInitScript(() => localStorage.setItem('systemConfig', JSON.stringify({systemName:'Tduck填鸭表单'})))
+  await page.route(/\/public\/systemInfoConfig(?:\?|$)/, route => route.fulfill({contentType:'application/json', body:JSON.stringify({code:200,data:JSON.stringify({systemName:'Tduck填鸭表单'})})}))
+  await page.goto('/login/entry')
+  await expect(page.getByRole('heading', {name:'瑞玛问卷系统',exact:true})).toBeVisible()
+  await expect(page).toHaveTitle(/瑞玛问卷系统/)
+  await expect(page.locator('body')).not.toContainText(/Tduck|填鸭/i)
+  await expect(page.locator('link[rel="icon"]')).toHaveAttribute('href','/favicon.ico?v=20261114')
+  await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveAttribute('href','/apple-touch-icon.png?v=20261114')
+  const logo = page.getByAltText('瑞玛公司标志'); await expect(logo).toBeVisible()
+  expect(await logo.evaluate(img => img.complete && img.naturalWidth > 0)).toBeTruthy()
+  await page.route(/\/public\/systemInfoConfig(?:\?|$)/, route => route.fulfill({contentType:'application/json', body:JSON.stringify({code:200,data:JSON.stringify({systemName:'设备改善问卷'})})}))
+  await page.reload(); await expect(page).toHaveTitle(/设备改善问卷/)
+  await page.goto('/missing/deep/page'); await expect(page.getByText('404',{exact:true}).first()).toBeVisible(); await expect(page.locator('.footer-text')).toHaveText('瑞玛问卷系统')
+})

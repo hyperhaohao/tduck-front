@@ -1,5 +1,9 @@
 import Vue from 'vue'
 import App from './App.vue'
+import { brand } from '@/config/brand'
+import BrandLogo from '@/components/BrandLogo.vue'
+Vue.prototype.$brand = brand
+Vue.component('BrandLogo', BrandLogo)
 
 import Element from 'element-ui'
 import 'element-ui/lib/theme-chalk/index.css'

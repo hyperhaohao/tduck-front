@@ -1,9 +1,7 @@
 <template>
   <div class="config-form-wrapper">
     <el-alert class="modern-alert" title="⚠️ 请注意，更改此配置后，需要重启后端项目才能生效" type="warning" show-icon>
-      <a href="https://doc.tduckcloud.com/openSource/configure/fileConfigure.html" target="_blank" class="alert-link">
-        查看文件配置官方文档 <i class="el-icon-link"></i>
-      </a>
+      <span>请按实际存储服务填写，保存后由管理员检查服务配置。</span>
     </el-alert>
 
     <el-form class="modern-form" ref="fileEnvConfig" :model="form" label-position="top">
@@ -68,7 +66,7 @@
         prop="uploadFolder"
         :rules="[{ required: true, message: '请输入存储路径', trigger: 'blur' }]"
       >
-        <el-input v-model="form.uploadFolder" placeholder="例如：/www/tduck/upload/" class="modern-input" />
+        <el-input v-model="form.uploadFolder" placeholder="例如：/application/upload/" class="modern-input" />
         <div class="form-hint">部署后端的服务器上的绝对路径，需确保应用有读写权限</div>
       </el-form-item>
 
@@ -77,7 +75,7 @@
         prop="domain"
         :rules="[{ required: true, message: '请输入能访问文件的域名', trigger: 'blur' }]"
       >
-        <el-input v-model="form.domain" placeholder="例如：https://oss.tduckcloud.com/" class="modern-input" />
+        <el-input v-model="form.domain" placeholder="例如：http://192.168.1.240:18000/u" class="modern-input" />
         <div class="form-hint">
           用于前端访问上传文件的公网 URL 访问域名，以 http:// 或 https:// 开头并以斜杠 (/) 结尾
         </div>

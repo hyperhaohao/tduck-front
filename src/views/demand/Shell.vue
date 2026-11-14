@@ -10,9 +10,7 @@
           @click="toggleMenu"
         />
       </el-badge>
-      <router-link class="demand-brand" to="/demand/home"
-        ><img src="@/assets/images/logo-tduck-ce.svg" alt="" /><span>瑞玛需求征集</span></router-link
-      >
+      <router-link class="demand-brand" to="/demand/home"><BrandLogo :compact="collapsed && !mobile" /></router-link>
       <div class="header-account">
         <template v-if="logged"
           ><span class="account-name">{{ user.name || '员工' }}</span
@@ -231,7 +229,7 @@ export default {
   font-weight: 600;
   font-size: 18px;
 }
-.demand-brand img {
+.demand-brand > img {
   width: 78px;
   height: 28px;
   object-fit: contain;
@@ -441,7 +439,7 @@ export default {
   .demand-brand {
     font-size: 16px;
   }
-  .demand-brand img {
+  .demand-brand > img {
     display: none;
   }
   .header-account {
@@ -518,6 +516,11 @@ export default {
   }
   .demand-detail-drawer .el-form-item__content {
     margin-left: 0 !important;
+  }
+}
+@media (max-width: 375px) {
+  .account-name {
+    display: none;
   }
 }
 @media (prefers-reduced-motion: reduce) {

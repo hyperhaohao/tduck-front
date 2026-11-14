@@ -6,18 +6,18 @@
     <div class="login-card-wrapper">
       <div class="logo-banner">
         <div class="banner-header">
-          <h1 class="brand-title">Tduck <span class="brand-badge">CE</span></h1>
+          <h1 class="brand-title"><BrandLogo /></h1>
           <p class="brand-description">简单 · 专业 · 现代的问卷数据收集平台</p>
         </div>
         <div class="banner-illustration-box">
-          <img src="@/assets/images/login_illustration.png" alt="Tduck Illustration" />
+          <img src="@/assets/images/login-survey.svg" alt="问卷与数据分析插画" />
         </div>
       </div>
 
       <div class="logo-content" :class="{ 'register-mode': formType !== 'login' }">
         <div v-if="formType == 'login'" class="welcome-header">
           <span class="hello">Hello,</span>
-          <span class="tips">欢迎使用 Tduck！</span>
+          <span class="tips">欢迎使用{{ $brand.name }}！</span>
         </div>
 
         <el-tabs v-if="formType == 'login'" v-model="loginType" class="login-form-tab">

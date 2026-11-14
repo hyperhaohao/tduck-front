@@ -4,7 +4,7 @@
     <div class="header-container">
       <div class="left-header">
         <div class="logo-wrapper" @click="$router.push({ path: '/' })">
-          <img src="@/assets/images/logo-tduck-ce.svg" alt="TDUCK Logo" class="home-logo-img" />
+          <BrandLogo />
         </div>
       </div>
       <div class="right-header">
@@ -69,8 +69,7 @@
 
           <div class="about-container">
             <span class="desc-text">
-              <a href="https://www.tduckcloud.com" target="view_window">TDUCK 官网</a>
-              <span class="copyright-text">© 2026 TDUCK Group</span>
+              <span class="copyright-text">{{ $brand.englishName }}</span>
             </span>
           </div>
         </div>

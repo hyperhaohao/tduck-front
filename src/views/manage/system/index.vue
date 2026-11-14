@@ -99,7 +99,7 @@
                 prop="sign"
               >
                 <el-input v-model="form.sign" placeholder="请输入短信签名" class="modern-input" />
-                <div class="form-hint">已在服务商处审核通过的短信签名，如：Tduck</div>
+                <div class="form-hint">已在服务商处审核通过的短信签名，如：瑞玛</div>
               </el-form-item>
               <el-form-item
                 :rules="[{ required: true, message: '请输入模板id', trigger: 'blur' }]"
