@@ -100,6 +100,7 @@ TDuck填鸭表单 是国内首批基于Vue开源的问卷/表单收集工具。
   </tr>
 </table>
 
+> 本分支已内置 AI 建表与设计器协作，不依赖商业版；配置与使用见后端 [AI 建表与协作说明](https://github.com/hyperhaohao/tduck-survey-form/blob/haoX/tduck-demand-loop/doc/AI建表与协作说明.md)。
 
 表单系统有3个版本（社区、Pro、TDuckX），此处绕不清的友友可以看看 [填鸭表单功能对比](http://https://docs.qq.com/sheet/DSUhoR2pOc2RuZ0Va?tab=BB08J2)
 
