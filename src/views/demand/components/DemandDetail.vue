@@ -332,6 +332,8 @@ export default {
       )
     },
     async savePublication(published) {
+      if (published && !(this.detail.messages || []).some((m) => m.kind === 'REPLY'))
+        return this.$message.warning('请先发布正式回复，再公示')
       if (
         published &&
         (!this.publication.title.trim() || !this.publication.summary.trim() || !this.publication.content.trim())

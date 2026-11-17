@@ -52,6 +52,7 @@
               编辑
             </el-button>
             <el-button
+              v-if="isGlobal"
               size="mini"
               class="action-btn secondary-action"
               icon="el-icon-data-analysis"
@@ -67,7 +68,7 @@
                 <i class="el-icon-more" />
               </span>
               <el-dropdown-menu slot="dropdown" class="card-more-menu">
-                <el-dropdown-item icon="el-icon-pie-chart" @click.native="toProjectHandle(p, 'statistics')">
+                <el-dropdown-item v-if="isGlobal" icon="el-icon-pie-chart" @click.native="toProjectHandle(p, 'statistics')">
                   统计分析
                 </el-dropdown-item>
                 <el-dropdown-item

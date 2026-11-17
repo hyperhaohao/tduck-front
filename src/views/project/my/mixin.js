@@ -1,4 +1,5 @@
 import { deleteFormRequest, stopFormRequest, logicDeleteFormRequest } from '@/api/project/form'
+import { demandState } from '@/utils/demand'
 import dayjs from 'dayjs'
 
 export default {
@@ -25,7 +26,11 @@ export default {
       return dayjs(time).format('YYYY/MM/DD')
     }
   },
-  computed: {},
+  computed: {
+    isGlobal() {
+      return !demandState.enabled || demandState.global
+    }
+  },
   methods: {
     getType(key) {
       const item = this.projectTypeList.find((e) => e.code === key)

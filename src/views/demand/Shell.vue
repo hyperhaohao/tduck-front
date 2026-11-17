@@ -195,6 +195,7 @@ export default {
       await this.$store.dispatch('user/logout')
       Object.assign(this.state, {
         admin: false,
+        global: false,
         handler: false,
         manage: false,
         mineUnread: 0,

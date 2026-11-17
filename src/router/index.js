@@ -47,14 +47,22 @@ Router.prototype.replace = function replace(location) {
 
 router.beforeEach(async (to, from, next) => {
   NProgress.start()
-  const legacyConsole =
+  const publicProject = ['/project/write', '/project/form/view', '/project/public/result'].includes(
+    to.path
+  )
+  const formDataPath = /^\/project\/form\/(data|statistics)(\/|$)/.test(to.path)
+  const consolePath =
+    /^\/project\/(my|form)(\/|$)/.test(to.path) && !formDataPath && !publicProject
+  const globalPath =
     /^\/(home|manage)(\/|$)/.test(to.path) ||
-    (/^\/project\//.test(to.path) &&
-      !['/project/write', '/project/form/view', '/project/public/result'].includes(to.path))
-  if (legacyConsole && store.getters['user/isLogin']) {
+    (/^\/project\//.test(to.path) && !publicProject && !consolePath)
+  if ((consolePath || globalPath) && store.getters['user/isLogin']) {
     try {
       const permissions = await refreshDemand()
-      if (permissions.enabled && !permissions.admin) {
+      if (
+        permissions.enabled &&
+        (globalPath ? !permissions.global : !permissions.admin)
+      ) {
         next('/demand/home')
         NProgress.done()
         return

@@ -265,14 +265,14 @@ export default {
       return this.formSummaries.filter((form) => this.plain(form.formName).includes(keyword))
     },
     batchCanManage() {
-      return this.selectedFormManage || demandState.admin
+      return this.selectedFormManage || demandState.global
     },
     batchEnabled() {
       return (
         this.pending &&
         this.scope === 'pending' &&
         !!this.selectedFormKey &&
-        (demandState.admin || demandState.manage || demandState.handler)
+        (demandState.global || demandState.manage || demandState.handler)
       )
     },
     dialogWidth() {
@@ -334,7 +334,7 @@ export default {
     selectForm(item) {
       this.selectedFormKey = item.formKey
       this.selectedFormName = this.plain(item.formName)
-      this.selectedFormManage = !!item.canManage || demandState.admin
+      this.selectedFormManage = !!item.canManage || demandState.global
       this.query.formKey = item.formKey
       this.query.page = 1
       this.load()
@@ -473,12 +473,14 @@ export default {
     },
     async batchPublish() {
       const selected = [...this.selectedRows]
-      const rows = selected.filter((row) => !row.publicationPublished)
+      const candidates = selected.filter((row) => !row.publicationPublished)
+      const rows = candidates.filter((row) => row.replyTime)
       const preSkipped = selected.length - rows.length
-      if (!rows.length) return this.$message.info('所选需求均已公示')
+      if (!candidates.length) return this.$message.info('所选需求均已公示')
+      if (!rows.length) return this.$message.warning('所选需求均未发布正式回复，无法公示')
       try {
         await this.$confirm(
-          `将自动使用需求标题、采纳说明和最近正式回复生成并发布 ${rows.length} 条公示，已公示的 ${preSkipped} 条将跳过。是否继续？`,
+          `将自动使用需求标题、采纳说明和最近正式回复生成并发布 ${rows.length} 条公示；已公示或未发布正式回复的 ${preSkipped} 条将跳过。是否继续？`,
           '批量公示',
           { type: 'warning' }
         )

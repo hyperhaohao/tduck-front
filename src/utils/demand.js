@@ -4,6 +4,7 @@ import { capabilities } from '@/api/demand'
 export const demandState = Vue.observable({
   enabled: false,
   admin: false,
+  global: false,
   handler: false,
   manage: false,
   mineUnread: 0,
@@ -14,7 +15,15 @@ export async function refreshDemand() {
   const response = await capabilities()
   Object.assign(
     demandState,
-    { mineUnread: 0, pending: 0, publicationUnread: 0, admin: false, handler: false, manage: false },
+    {
+      mineUnread: 0,
+      pending: 0,
+      publicationUnread: 0,
+      admin: false,
+      global: false,
+      handler: false,
+      manage: false
+    },
     response.data
   )
   return demandState

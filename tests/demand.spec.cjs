@@ -1,21 +1,31 @@
 const { test, expect } = require('@playwright/test')
 const path = require('path')
-const notices = { enabled: true, admin: true, handler: true, manage: true, mineUnread: 2, pending: 5, publicationUnread: 3 }
+const notices = { enabled: true, admin: true, global: true, handler: true, manage: true, mineUnread: 2, pending: 5, publicationUnread: 3 }
 const forms = [
-  { formKey: 'A', name: '信息化需求征集', summary: '征集业务系统优化、报表改进与工作流程建议。', status: 2, published: true, visibility: 'LOGIN', allowAnonymous: true, revision: 0 },
-  { formKey: 'B', name: '设备改善需求征集', summary: '提交设备维护、现场改善和安全优化需求。', status: 2, published: true, visibility: 'LOGIN', allowAnonymous: false, revision: 0 }
+  { formKey: 'A', name: '信息化需求征集', summary: '征集业务系统优化、报表改进与工作流程建议。', status: 2, published: true, visibility: 'LOGIN', allowAnonymous: true, revision: 0, demandCount: 2 },
+  { formKey: 'B', name: '设备改善需求征集', summary: '提交设备维护、现场改善和安全优化需求。', status: 2, published: true, visibility: 'LOGIN', allowAnonymous: false, revision: 0, demandCount: 0 }
 ]
+const deletedForms = [
+  { formKey: 'D', name: '已删除收集单', demandCount: 2, dataCount: 2, deletedAt: '2026-11-16 10:00:00', deletedByName: '维护管理员' },
+  { formKey: 'E', name: '空收集单', demandCount: 0, dataCount: 0, deletedAt: '2026-11-16 10:10:00', deletedByName: '维护管理员' }
+]
+const departments = [
+  { deptKey: 'D1', name: '技术部', parentKey: null, path: '/D1', sortNo: 1, memberCount: 3 },
+  { deptKey: 'D2', name: '研发组', parentKey: 'D1', path: '/D1/D2', sortNo: 2, memberCount: 2 }
+]
+let departmentGrants = []
 const row = { id: 'demand-1', title: '优化设备维护记录查询', requestNo: 'REQ-20261113-TEST001', formKey: 'A', formName: '信息化需求征集', submitterName: '测试员工', handlerId: '30', handlerName: '测试经办人', decision: 'ACCEPTED', progress: 'IN_PROGRESS', unread: true, revision: 1, publicVersion: 3, createTime: '2026-11-13 09:00:00', replyTime: '2026-11-13 10:00:00', publicationPublished: false, publicationSkipped: false, publicationVersion: 0, canHandle: true, canManage: true }
 const rowA2 = { ...row, id: 'demand-3', title: '新增报表导出字段', requestNo: 'REQ-20261113-TEST003', revision: 5, unread: false, formName: '信息化需求征集与设备改善需求联合征集（超长名称用于验证省略）' }
 const rowB = { ...row, id: 'demand-2', title: '车间照明改善', requestNo: 'REQ-20261113-TEST002', formKey: 'B', formName: '设备改善需求征集', unread: false }
 let detail
 let calls = []
 let options = {}
-function makeDetail() { return { ...row, canViewTable: true, canHandle: true, canAssign: true, canPublish: true, canManage: true, publicationSkipped: false, originalData: { title: row.title, description: '希望能按设备编号查询维护历史，减少重复查找。' }, formFields: [{ value: 'title', label: '需求标题' }, { value: 'description', label: '需求说明' }], reason: '采纳，已安排实施。', completion: '', messages: [{ id: 'reply-1', kind: 'REPLY', authorName: '测试经办人', content: '已完成初步评估，目前正在实施。', createTime: '2026-11-13 10:00:00' }], publication: null } }
+function makeDetail(opts = {}) { return { ...row, canViewTable: true, canHandle: true, canAssign: true, canPublish: true, canManage: true, publicationSkipped: false, originalData: { title: row.title, description: '希望能按设备编号查询维护历史，减少重复查找。' }, formFields: [{ value: 'title', label: '需求标题' }, { value: 'description', label: '需求说明' }], reason: '采纳，已安排实施。', completion: '', messages: opts.noReply ? [] : [{ id: 'reply-1', kind: 'REPLY', authorName: '测试经办人', content: '已完成初步评估，目前正在实施。', createTime: '2026-11-13 10:00:00' }], publication: null } }
 async function mockApi(page, role = 'all', opts = {}) {
-  detail = makeDetail()
+  detail = makeDetail(opts)
   calls = []
   options = opts
+  departmentGrants = [{ deptKey: 'D1', name: '技术部', memberCount: 3, canFill: false, canHandle: false, canManage: !opts.noDeptManager }]
   await page.route('**/*', async route => {
     const url = new URL(route.request().url())
     if (url.hostname !== '127.0.0.1') return route.abort()
@@ -45,24 +55,78 @@ async function mockApi(page, role = 'all', opts = {}) {
       detail.publicationSkipped = true
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, data: { changed: true, skipped: true }, msg: null }) })
     }
+    if (/\/demand-api\/admin\/forms\/[^/]+\/void$/.test(api)) {
+      calls.push({ type: 'void', key: api.split('/')[4], body: route.request().postDataJSON() })
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, data: null, msg: null }) })
+    }
+    if (/\/demand-api\/admin\/forms\/[^/]+\/delete$/.test(api)) {
+      calls.push({ type: 'deleteForm', key: api.split('/')[4] })
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, data: { demandCount: 2, dataCount: 2 }, msg: null }) })
+    }
+    if (/\/demand-api\/admin\/forms\/[^/]+\/restore$/.test(api)) {
+      calls.push({ type: 'restore', key: api.split('/')[4] })
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, data: null, msg: null }) })
+    }
+    if (/\/demand-api\/admin\/forms\/[^/]+\/purge$/.test(api)) {
+      calls.push({ type: 'purge', key: api.split('/')[4] })
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, data: { purged: true }, msg: null }) })
+    }
+    if (/\/demand-api\/admin\/forms\/[^/]+\/department-members\/[^/]+$/.test(api)) {
+      const key = api.split('/')[4]
+      const deptKey = decodeURIComponent(api.split('/').pop())
+      if (route.request().method() === 'POST') {
+        const body = route.request().postDataJSON()
+        calls.push({ type: 'departmentMember', key, deptKey, body })
+        const meta = departments.find((d) => d.deptKey === deptKey) || { name: deptKey, memberCount: 0 }
+        const row = {
+          deptKey,
+          name: meta.name,
+          memberCount: meta.memberCount,
+          canFill: !!body.canFill,
+          canHandle: !!body.canHandle,
+          canManage: !!body.canManage
+        }
+        const index = departmentGrants.findIndex((d) => d.deptKey === deptKey)
+        if (index >= 0) departmentGrants[index] = row
+        else departmentGrants.push(row)
+        return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, data: null, msg: null }) })
+      }
+      if (route.request().method() === 'DELETE') {
+        calls.push({ type: 'removeDepartmentMember', key, deptKey })
+        departmentGrants = departmentGrants.filter((d) => d.deptKey !== deptKey)
+        return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, data: null, msg: null }) })
+      }
+    }
+    if (api === '/demand-api/admin/departments/import') {
+      calls.push({ type: 'importDepartments', body: route.request().postDataJSON() })
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, data: { departments: 2, memberships: 1, replaced: true }, msg: null }) })
+    }
     let data = null
-    if (api === '/demand-api/capabilities') data = { ...notices, admin: role === 'all', handler: role !== 'ordinary', manage: role === 'all' || role === 'manager' }
-    else if (api === '/demand-api/forms' || api === '/demand-api/admin/forms') data = forms
+    if (api === '/demand-api/capabilities') data = { ...notices, admin: role === 'all' || role === 'assigned', global: role === 'all', handler: role !== 'ordinary', manage: role === 'all' || role === 'manager' || role === 'assigned' }
+    else if (api === '/demand-api/forms') data = forms
+    else if (api === '/demand-api/admin/forms') data = (role === 'assigned' ? forms.filter((f) => f.formKey === 'A') : forms).map((f) => ({ ...f, voided: options.voidedKey === f.formKey }))
+    else if (api === '/demand-api/admin/forms/deleted') data = deletedForms
     else if (/^\/demand-api\/forms\/[^/]+\/handlers$/.test(api)) data = [{ userId: '30', name: '测试经办人' }]
     else if (/^\/demand-api\/forms\//.test(api)) data = { managed: true, allowAnonymous: api.endsWith('/A') }
     else if (api === '/demand-api/requests') {
       const formKey = url.searchParams.get('formKey')
       const aRows = [{ ...row, publicationPublished: !!options.publishedFirst }, rowA2]
-      const rows = formKey === 'A' ? aRows : formKey === 'B' ? [rowB] : [...aRows, rowB]
+      const rows = role === 'assigned'
+        ? formKey === 'B' ? [] : aRows
+        : formKey === 'A' ? aRows : formKey === 'B' ? [rowB] : [...aRows, rowB]
       data = { rows, total: rows.length }
     }
     else if (api === '/demand-api/requests/summary') {
       const scope = url.searchParams.get('scope')
-      const canManage = role === 'all' || role === 'manager'
-      data = scope === 'pending' ? [{ formKey: 'A', formName: '信息化需求征集', total: 2, unread: 0, pending: 2, lastUpdate: '2026-11-13 09:00:00', canManage }] : [{ formKey: 'A', formName: '信息化需求征集', total: 2, unread: 1, pending: 1, lastUpdate: '2026-11-13 09:00:00', canManage }, { formKey: 'B', formName: '设备改善需求征集', total: 1, unread: 0, pending: 1, lastUpdate: '2026-11-12 09:00:00', canManage }]
+      const canManage = role === 'all' || role === 'manager' || role === 'assigned'
+      const all = [{ formKey: 'A', formName: '信息化需求征集', total: 2, unread: 1, pending: 1, lastUpdate: '2026-11-13 09:00:00', canManage }, { formKey: 'B', formName: '设备改善需求征集', total: 1, unread: 0, pending: 1, lastUpdate: '2026-11-12 09:00:00', canManage }]
+      const pending = { ...all[0], unread: 0, pending: 2 }
+      data = scope === 'pending' ? [pending] : role === 'assigned' ? [all[0]] : all
     }
     else if (api === '/demand-api/requests/demand-1') data = detail
     else if (api === '/demand-api/admin/forms/A/members') data = [{ userId: '30', name: '测试经办人', canHandle: true, canFill: true, canManage: true }]
+    else if (api === '/demand-api/admin/departments') data = departments
+    else if (/^\/demand-api\/admin\/forms\/[^/]+\/department-members$/.test(api)) data = api.includes('/A/') ? departmentGrants : []
     else if (api === '/demand-api/admin/users') data = [{ id: '30', name: '测试经办人' }]
     else if (api === '/demand-api/admin/roles') data = []
     else if (api === '/demand-api/lookup') data = { ...detail, canViewTable: false, canHandle: false, canAssign: false, canPublish: false }
@@ -142,7 +206,7 @@ test('write defaults to login and anonymous mode is optional', async ({ page }) 
 test('login page only presents login and administrator configuration opens on mobile', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 }); await login(page); await mockApi(page); await page.goto('/login/entry'); await expect(page.getByRole('button', { name: '登录', exact: true })).toBeVisible(); await expect(page.getByText(/Casdoor/i)).toHaveCount(0); await noOverflow(page)
   await page.goto('/demand/admin'); await expect(page.getByRole('heading', { name: '后台管理' })).toBeVisible(); await page.getByRole('button', { name: '收集配置' }).first().click(); await expect(page.getByText('允许匿名填写', { exact: true })).toBeVisible(); await noOverflow(page)
-  await page.reload(); await expect(page.getByRole('heading', { name: '后台管理' })).toBeVisible(); await page.getByRole('button', { name: '成员权限' }).first().click(); await expect(page.getByText('全选可填报', { exact: true })).toBeVisible(); await noOverflow(page)
+  await page.reload(); await expect(page.getByRole('heading', { name: '后台管理' })).toBeVisible(); await page.getByRole('button', { name: '成员权限' }).first().click(); await expect(page.getByText('全选可填报', { exact: true }).first()).toBeVisible(); await noOverflow(page)
 })
 test('admin member drawer supports column select-all and one-click save', async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 768 }); await login(page); await mockApi(page)
@@ -153,7 +217,85 @@ test('admin member drawer supports column select-all and one-click save', async 
   await expect(fillAll).toHaveClass(/is-checked/); await expect(handleAll).toHaveClass(/is-checked/)
   await fillAll.click(); await expect(fillAll).not.toHaveClass(/is-checked/); await expect(drawer.locator('.member-row .el-checkbox').first()).not.toHaveClass(/is-checked/)
   await fillAll.click(); await expect(fillAll).toHaveClass(/is-checked/)
-  await drawer.getByRole('button', { name: '一键保存' }).click(); await expect(page.getByText('成员权限已保存', { exact: true })).toBeVisible(); expect(saves).toBe(1); await noOverflow(page); await page.screenshot({ path: 'test-results/admin-member-bulk.png', fullPage: true, animations: 'disabled' })
+  await drawer.getByRole('button', { name: '一键保存' }).first().click(); await expect(page.getByText('成员权限已保存', { exact: true })).toBeVisible(); expect(saves).toBe(1); await noOverflow(page); await page.screenshot({ path: 'test-results/admin-member-bulk.png', fullPage: true, animations: 'disabled' })
+})
+test('admin department grants display and reopen', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 }); await login(page); await mockApi(page)
+  await page.goto('/demand/admin'); await expect(page.getByRole('heading', { name: '后台管理' })).toBeVisible(); await page.getByRole('button', { name: '成员权限' }).first().click()
+  const drawer = page.locator('.el-drawer').filter({ hasText: '成员与权限' })
+  await drawer.locator('.el-tabs__item').filter({ hasText: '部门' }).click()
+  const pane = drawer.locator('#pane-departments')
+  const existing = pane.locator('.member-row').filter({ hasText: '技术部' }).first()
+  await expect(existing).toBeVisible(); await expect(existing.locator('.el-checkbox').nth(2)).toHaveClass(/is-checked/)
+  await page.evaluate(() => { const vm = document.querySelector('.demand-page').__vue__; vm.departmentKey = 'D2'; vm.addDepartment() })
+  const added = pane.locator('.member-row').filter({ hasText: '研发组' }).first()
+  await added.locator('.el-checkbox').first().click()
+  await pane.getByRole('button', { name: '一键保存' }).click()
+  await expect(page.getByText('部门权限已保存', { exact: true })).toBeVisible()
+  const saved = calls.find((c) => c.type === 'departmentMember' && c.deptKey === 'D2')
+  expect(saved && saved.body.canFill).toBeTruthy()
+  await noOverflow(page); await page.screenshot({ path: 'test-results/admin-department-grants.png', fullPage: true, animations: 'disabled' })
+  await page.locator('button[aria-label="close 成员与权限"]').click()
+  await page.waitForTimeout(800)
+  await page.getByRole('button', { name: '成员权限' }).first().click()
+  const reopenedDrawer = page.locator('.el-drawer').filter({ hasText: '成员与权限' })
+  await reopenedDrawer.locator('.el-tabs__item').filter({ hasText: '部门' }).click()
+  const reopened = reopenedDrawer.locator('#pane-departments')
+  const reopenedRow = reopened.locator('.member-row').filter({ hasText: '研发组' }).first()
+  await reopenedRow.waitFor({ timeout: 10000 })
+  await expect(reopenedRow.locator('.el-checkbox').first()).toHaveClass(/is-checked/)
+})
+test('admin voids a collection form', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 }); await login(page); await mockApi(page)
+  await page.goto('/demand/admin'); await expect(page.getByRole('heading', { name: '后台管理' })).toBeVisible()
+  const card = page.locator('.admin-form-list .demand-card').first()
+  await card.getByRole('button', { name: '作废', exact: true }).click()
+  await expect(page.getByText('作废收集单', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '确认作废', exact: true }).click()
+  await expect.poll(() => calls.filter((c) => c.type === 'void')).toEqual([{ type: 'void', key: 'A', body: { voided: true } }])
+  await expect(page.getByText('收集单已作废', { exact: true })).toBeVisible(); await noOverflow(page)
+})
+test('voided collection shows tag and can be restored', async ({ page }) => {
+  await login(page); await mockApi(page, 'all', { voidedKey: 'A' })
+  await page.goto('/demand/admin'); const card = page.locator('.admin-form-list .demand-card').first()
+  await expect(card.getByText('已作废', { exact: true })).toBeVisible()
+  await card.getByRole('button', { name: '恢复', exact: true }).click()
+  await expect(page.getByText('恢复收集单', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '确认恢复', exact: true }).click()
+  await expect.poll(() => calls.filter((c) => c.type === 'void')).toEqual([{ type: 'void', key: 'A', body: { voided: false } }])
+  await expect(page.getByText('收集单已恢复', { exact: true })).toBeVisible()
+})
+test('global admin deletes a collection form and restores it from recycle', async ({ page }) => {
+  await login(page); await mockApi(page)
+  await page.goto('/demand/admin'); await expect(page.getByRole('heading', { name: '后台管理' })).toBeVisible()
+  const card = page.locator('.admin-form-list .demand-card').first()
+  await card.getByRole('button', { name: '删除', exact: true }).click()
+  await expect(page.getByText('删除收集单', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '确认删除', exact: true }).click()
+  await expect.poll(() => calls.filter((c) => c.type === 'deleteForm')).toEqual([{ type: 'deleteForm', key: 'A' }])
+  await expect(page.getByText('已移入回收站，需求与答卷已保留', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '全局回收站', exact: true }).click()
+  const dialog = page.locator('.el-dialog').filter({ hasText: '全局回收站' })
+  const row = dialog.locator('.el-table__row').filter({ hasText: '已删除收集单' })
+  await expect(row).toContainText('2')
+  await row.getByRole('button', { name: '恢复', exact: true }).click()
+  await page.getByRole('button', { name: '确认恢复', exact: true }).click()
+  await expect.poll(() => calls.filter((c) => c.type === 'restore')).toEqual([{ type: 'restore', key: 'D' }])
+  await expect(page.getByText('收集单已恢复', { exact: true })).toBeVisible()
+})
+test('global recycle purges only empty collections', async ({ page }) => {
+  await login(page); await mockApi(page)
+  await page.goto('/demand/admin'); await page.getByRole('button', { name: '全局回收站', exact: true }).click()
+  const dialog = page.locator('.el-dialog').filter({ hasText: '全局回收站' })
+  const withDemands = dialog.locator('.el-table__row').filter({ hasText: '已删除收集单' })
+  await expect(withDemands.getByRole('button', { name: '彻底删除', exact: true })).toHaveClass(/is-disabled/)
+  const empty = dialog.locator('.el-table__row').filter({ hasText: '空收集单' })
+  await empty.getByRole('button', { name: '彻底删除', exact: true }).click()
+  const box = page.locator('.el-message-box')
+  await box.locator('input').fill('空收集单')
+  await page.getByRole('button', { name: '确认删除', exact: true }).click()
+  await expect.poll(() => calls.filter((c) => c.type === 'purge')).toEqual([{ type: 'purge', key: 'E' }])
+  await expect(page.getByText('收集单已彻底删除', { exact: true })).toBeVisible()
 })
 
 test('small phone at 320px keeps navigation and detail within viewport', async ({ page }) => {
@@ -192,7 +334,7 @@ test('desktop export downloads filtered xlsx for pending, publications and admin
   await page.goto('/demand/admin'); await page.getByText('需求总表与公示审核', { exact: true }).click()
   await page.getByRole('button', { name: '进入信息化需求征集' }).click()
   file = await download('导出本收集单'); expect(file.suggestedFilename()).toMatch(/^需求总表-\d{8}-\d{4}\.xlsx$/)
-  expect(urls[urls.length - 1]).toContain('scope=table'); expect(urls[urls.length - 1]).toContain('formKey=A')
+  expect(urls[urls.length - 1]).toContain('scope=managed'); expect(urls[urls.length - 1]).toContain('formKey=A')
 })
 
 test('admin demand table groups by collection, drills down and returns', async ({ page }) => {
@@ -205,6 +347,37 @@ test('admin demand table groups by collection, drills down and returns', async (
   await page.screenshot({ path: 'test-results/admin-table-1024.png', fullPage: true, animations: 'disabled' })
 })
 
+test('assigned admin sees only manageable collections and no role grant', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 }); await login(page); await mockApi(page, 'assigned')
+  await page.goto('/demand/home'); await expect(page.getByText('后台管理', { exact: true })).toBeVisible()
+  await page.goto('/demand/admin'); await expect(page.getByRole('heading', { name: '后台管理' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '新建收集单' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '后台管理员授权' })).toHaveCount(0)
+  await expect(page.locator('.admin-form-list .demand-card')).toHaveCount(1)
+  await expect(page.locator('.admin-form-list')).toContainText('信息化需求征集')
+  await expect(page.locator('.admin-form-list')).not.toContainText('设备改善需求征集')
+  let exportUrl = ''
+  page.on('request', req => { if (req.url().includes('/demand-api/export/requests')) exportUrl = decodeURIComponent(req.url()) })
+  await page.getByText('需求总表与公示审核', { exact: true }).click()
+  await expect(page.getByRole('button', { name: '进入信息化需求征集' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '进入设备改善需求征集' })).toHaveCount(0)
+  await page.getByRole('button', { name: '导出全部' }).click()
+  await expect.poll(() => exportUrl).toContain('scope=managed')
+  await expect.poll(() => exportUrl).not.toContain('scope=table')
+  await page.goto('/manage/user'); await expect(page).toHaveURL(/\/demand\/home$/)
+  await page.goto('/project/form/data?key=A'); await expect(page).toHaveURL(/\/demand\/home$/)
+})
+
+test('assigned admin designer hides data and statistics', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 }); await login(page); await mockApi(page, 'assigned')
+  await page.goto('/project/form?key=A')
+  const menu = page.locator('.custom-el-menu')
+  await expect(menu).toContainText('编辑')
+  await expect(menu.locator('.el-menu-item').filter({ hasText: '数据' })).toHaveCount(0)
+  await expect(menu.locator('.el-menu-item').filter({ hasText: '统计' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '保存至模板中心' })).toHaveCount(0)
+})
+
 test('manager sees pending menu and can skip publication in detail', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 }); await login(page); await mockApi(page, 'manager')
   await page.goto('/demand/home'); await expect(page.getByText('待我处理', { exact: false }).first()).toBeVisible(); await expect(page.getByText('后台管理', { exact: true })).toHaveCount(0)
@@ -214,6 +387,15 @@ test('manager sees pending menu and can skip publication in detail', async ({ pa
   await expect(page.getByText('已记录为不公示', { exact: true })).toBeVisible()
   expect(calls.filter(c => c.type === 'skip').map(c => c.body.revision)).toEqual([1])
   await expect(page.getByText('该需求已标记为不公示；仍可在此重新发布公示。')).toBeVisible()
+})
+
+test('manual publication requires a formal reply first', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 }); await login(page); await mockApi(page, 'manager', { noReply: true })
+  await page.goto('/demand/pending'); await page.getByRole('button', { name: '进入信息化需求征集' }).click(); await page.getByRole('button', { name: '查看', exact: true }).first().click()
+  await expect(page.getByRole('heading', { name: '内部公示' })).toBeVisible()
+  await page.getByRole('button', { name: '审核并发布公示' }).click()
+  await expect(page.getByText('请先发布正式回复，再公示', { exact: true })).toBeVisible()
+  await expect(page.getByText('公示已发布', { exact: true })).toHaveCount(0)
 })
 
 test('manager batch assign aggregates partial conflict without toast spam', async ({ page }) => {
@@ -248,12 +430,12 @@ test('manager batch outcome applies one result with per-row revision', async ({ 
 })
 
 test('member drawer manage checkbox blocks removing the last manager', async ({ page }) => {
-  await page.setViewportSize({ width: 1024, height: 768 }); await login(page); await mockApi(page)
+  await page.setViewportSize({ width: 1024, height: 768 }); await login(page); await mockApi(page, 'all', { noDeptManager: true })
   let saves = 0; page.on('request', req => { if (req.method() === 'POST' && req.url().includes('/admin/forms/A/members/')) saves++ })
   await page.goto('/demand/admin'); await page.getByRole('button', { name: '成员权限' }).first().click()
-  const drawer = page.locator('.demand-detail-drawer'); await expect(drawer.getByText('全选可管理', { exact: true })).toBeVisible(); await expect(drawer.getByText('可管理/可公示', { exact: true })).toBeVisible()
+  const drawer = page.locator('.demand-detail-drawer'); await expect(drawer.getByText('全选可管理', { exact: true }).first()).toBeVisible(); await expect(drawer.getByText('可管理/可公示', { exact: true }).first()).toBeVisible()
   const manage = drawer.locator('.member-row .el-checkbox').nth(2); await expect(manage).toHaveClass(/is-checked/); await manage.click()
-  await drawer.getByRole('button', { name: '一键保存' }).click(); await expect(page.getByText('每个收集单至少保留一名单据管理员', { exact: true })).toBeVisible(); expect(saves).toBe(0)
+  await drawer.getByRole('button', { name: '一键保存' }).first().click(); await expect(page.getByText('每个收集单至少保留一名有效单据管理员', { exact: true })).toBeVisible(); expect(saves).toBe(0)
 })
 
 test('small screens keep export available and hide batch controls', async ({ page }) => {

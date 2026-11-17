@@ -58,7 +58,7 @@
               编辑
             </el-button>
 
-            <el-button type="text" class="action-btn-text" @click="toProjectHandle(scope.row, 'statistics')">
+            <el-button v-if="isGlobal" type="text" class="action-btn-text" @click="toProjectHandle(scope.row, 'statistics')">
               <i class="el-icon-data-analysis" />
               统计
             </el-button>

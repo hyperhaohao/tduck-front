@@ -35,9 +35,24 @@ export const exportPublications = (params) =>
     silent: true
   })
 export const adminForms = () => request.get('/demand-api/admin/forms')
+export const deletedForms = () => request.get('/demand-api/admin/forms/deleted')
+export const deleteCollection = (key) =>
+  request.post(`/demand-api/admin/forms/${encodeURIComponent(key)}/delete`)
+export const restoreCollection = (key) =>
+  request.post(`/demand-api/admin/forms/${encodeURIComponent(key)}/restore`)
+export const purgeCollection = (key) =>
+  request.post(`/demand-api/admin/forms/${encodeURIComponent(key)}/purge`)
 export const configureForm = (key, data) => request.post(`/demand-api/admin/forms/${key}`, data)
+export const voidForm = (key, data) => request.post(`/demand-api/admin/forms/${key}/void`, data)
 export const members = (key) => request.get(`/demand-api/admin/forms/${key}/members`)
 export const saveMember = (key, id, data) => request.post(`/demand-api/admin/forms/${key}/members/${id}`, data)
+export const departments = () => request.get('/demand-api/admin/departments')
+export const departmentMembers = (key) => request.get(`/demand-api/admin/forms/${key}/department-members`)
+export const saveDepartmentMember = (key, deptKey, data) =>
+  request.post(`/demand-api/admin/forms/${key}/department-members/${encodeURIComponent(deptKey)}`, data)
+export const removeDepartmentMember = (key, deptKey) =>
+  request.delete(`/demand-api/admin/forms/${key}/department-members/${encodeURIComponent(deptKey)}`)
+export const importDepartments = (data) => request.post('/demand-api/admin/departments/import', data)
 export const users = (keyword = '') => request.get('/demand-api/admin/users', { params: { keyword } })
 export const admins = () => request.get('/demand-api/admin/roles')
 export const saveAdmin = (id, grant) => request.post(`/demand-api/admin/roles/${id}`, { grant })
