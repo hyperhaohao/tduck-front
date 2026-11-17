@@ -239,103 +239,100 @@
         ><template v-if="selected"
           ><h3>{{ plain(selected.name) }}</h3>
           <p class="demand-muted">
-            填报、经办与管理权限分别授予，可同时拥有。成员与部门授权取并集，部门授权默认包含下级部门。创建人默认是单据管理员；单据管理员可在待我处理查看本收集单全部未办结需求，并分派、公示、跳过公示、代填处理结果。每个收集单至少保留一名有效单据管理员。
+            填报、经办与管理权限分别授予，可同时拥有；「管理」即可管理/可公示。下表同时列出成员与部门授权，类型列区分，全选与一键保存对两类同时生效。成员与部门授权取并集，部门授权默认包含下级部门。创建人默认是单据管理员；单据管理员可在待我处理查看本收集单全部未办结需求，并分派、公示、跳过公示、代填处理结果。每个收集单至少保留一名有效单据管理员。
           </p>
-          <el-tabs v-model="memberTab">
-            <el-tab-pane label="成员" name="users">
-              <div class="member-picker">
-                <el-select
-                  v-model="memberId"
-                  filterable
-                  remote
-                  :remote-method="searchUsers"
-                  placeholder="搜索姓名选择人员"
-                  style="width: 100%"
-                  ><el-option v-for="user in candidates" :key="user.id" :label="user.name" :value="user.id" /></el-select
-                ><el-button @click="addMember">添加</el-button>
-              </div>
-              <div class="member-bulk-bar">
-                <el-checkbox v-model="selectAllFill" :indeterminate="fillIndeterminate" :disabled="!memberRows.length"
-                  >全选可填报</el-checkbox
-                ><el-checkbox v-model="selectAllHandle" :indeterminate="handleIndeterminate" :disabled="!memberRows.length"
-                  >全选可经办</el-checkbox
-                ><el-checkbox v-model="selectAllManage" :indeterminate="manageIndeterminate" :disabled="!memberRows.length"
-                  >全选可管理</el-checkbox
-                ><el-button type="primary" :loading="bulkSaving" :disabled="!memberRows.length" @click="saveAllMembers"
-                  >一键保存</el-button
-                >
-              </div>
-              <div v-for="member in memberRows" :key="member.userId" class="member-row">
-                <strong>{{ member.name }}</strong>
-                <div class="member-flags">
-                  <el-checkbox v-model="member.canFill">可填报</el-checkbox
-                  ><el-checkbox v-model="member.canHandle">可经办</el-checkbox
-                  ><el-checkbox v-model="member.canManage">可管理/可公示</el-checkbox
-                  ><el-button type="text" :loading="saving" @click="saveMemberRow(member)">保存</el-button>
+          <div class="member-picker">
+            <el-cascader
+              v-model="departmentKey"
+              :options="departmentOptions"
+              :props="departmentProps"
+              filterable
+              clearable
+              placeholder="选择部门（可含下级）"
+              style="width: 100%"
+            /><el-button @click="addDepartment">添加部门</el-button>
+          </div>
+          <div class="member-picker">
+            <el-select
+              v-model="memberId"
+              filterable
+              remote
+              :remote-method="searchUsers"
+              placeholder="搜索姓名选择人员"
+              style="width: 100%"
+              ><el-option v-for="user in candidates" :key="user.id" :label="user.name" :value="user.id" /></el-select
+            ><el-button @click="addMember">添加成员</el-button>
+          </div>
+          <div class="member-bulk-bar">
+            <el-checkbox v-model="selectAllFill" :indeterminate="fillIndeterminate" :disabled="!grantRows.length"
+              >全选可填报</el-checkbox
+            ><el-checkbox v-model="selectAllHandle" :indeterminate="handleIndeterminate" :disabled="!grantRows.length"
+              >全选可经办</el-checkbox
+            ><el-checkbox v-model="selectAllManage" :indeterminate="manageIndeterminate" :disabled="!grantRows.length"
+              >全选可管理</el-checkbox
+            ><el-button type="primary" :loading="bulkSaving" :disabled="!grantRows.length" @click="saveAllGrants"
+              >一键保存</el-button
+            >
+          </div>
+          <el-table
+            class="demand-table-compact member-grant-table"
+            :data="grantRows"
+            :row-key="grantRowKey"
+            size="mini"
+            border
+            :max-height="grantTableMaxHeight"
+            empty-text="暂无授权，请先添加成员或部门"
+          >
+            <el-table-column v-if="!mobile" label="类型" width="60" align="center">
+              <template slot-scope="s">
+                <el-tag size="mini" :type="s.row.rowType === 'department' ? 'success' : 'info'">{{
+                  s.row.rowType === 'department' ? '部门' : '成员'
+                }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="名称" :min-width="mobile ? 90 : 140">
+              <template slot-scope="s">
+                <div class="member-grant-name" :title="grantLabel(s.row)">
+                  <el-tag v-if="mobile" size="mini" :type="s.row.rowType === 'department' ? 'success' : 'info'">{{
+                    s.row.rowType === 'department' ? '部门' : '成员'
+                  }}</el-tag
+                  ><span class="member-grant-name-text">{{ s.row.name }}</span
+                  ><span v-if="s.row.rowType === 'department' && !mobile" class="demand-muted"
+                    >（含下级 {{ Number(s.row.memberCount || 0) }} 人）</span
+                  >
                 </div>
-              </div>
-            </el-tab-pane>
-            <el-tab-pane label="部门" name="departments">
-              <div class="member-picker">
-                <el-cascader
-                  v-model="departmentKey"
-                  :options="departmentOptions"
-                  :props="departmentProps"
-                  filterable
-                  clearable
-                  placeholder="选择部门（可含下级）"
-                  style="width: 100%"
-                /><el-button @click="addDepartment">添加</el-button>
-              </div>
-              <div class="member-bulk-bar">
-                <el-checkbox
-                  v-model="selectAllDeptFill"
-                  :indeterminate="deptFillIndeterminate"
-                  :disabled="!departmentRows.length"
-                  >全选可填报</el-checkbox
-                ><el-checkbox
-                  v-model="selectAllDeptHandle"
-                  :indeterminate="deptHandleIndeterminate"
-                  :disabled="!departmentRows.length"
-                  >全选可经办</el-checkbox
-                ><el-checkbox
-                  v-model="selectAllDeptManage"
-                  :indeterminate="deptManageIndeterminate"
-                  :disabled="!departmentRows.length"
-                  >全选可管理</el-checkbox
-                ><el-button
-                  type="primary"
-                  :loading="bulkSaving"
-                  :disabled="!departmentRows.length"
-                  @click="saveAllDepartments"
-                  >一键保存</el-button
-                >
-              </div>
-              <div v-for="department in departmentRows" :key="department.deptKey" class="member-row">
-                <strong
-                  >{{ department.name
-                  }}<span class="demand-muted">（含下级 {{ department.memberCount }} 人）</span></strong
-                >
-                <div class="member-flags">
-                  <el-checkbox v-model="department.canFill">可填报</el-checkbox
-                  ><el-checkbox v-model="department.canHandle">可经办</el-checkbox
-                  ><el-checkbox v-model="department.canManage">可管理/可公示</el-checkbox
-                  ><el-button type="text" :loading="saving" @click="saveDepartmentRow(department)">保存</el-button
-                  ><el-button
-                    type="text"
-                    class="danger-text"
-                    :loading="saving"
-                    @click="removeDepartmentRow(department)"
+              </template>
+            </el-table-column>
+            <el-table-column label="填报" :width="mobile ? 44 : 62" align="center">
+              <template slot-scope="s"
+                ><el-checkbox v-model="s.row.canFill" :aria-label="s.row.name + '可填报'"
+              /></template>
+            </el-table-column>
+            <el-table-column label="经办" :width="mobile ? 44 : 62" align="center">
+              <template slot-scope="s"
+                ><el-checkbox v-model="s.row.canHandle" :aria-label="s.row.name + '可经办'"
+              /></template>
+            </el-table-column>
+            <el-table-column label="管理" :width="mobile ? 44 : 62" align="center">
+              <template slot-scope="s"
+                ><el-checkbox v-model="s.row.canManage" :aria-label="s.row.name + '可管理/可公示'"
+              /></template>
+            </el-table-column>
+            <el-table-column label="操作" :width="mobile ? 60 : 104" align="center">
+              <template slot-scope="s">
+                <div class="member-grant-actions">
+                  <el-button type="text" size="mini" :loading="saving" @click="saveGrantRow(s.row)">保存</el-button
+                  ><el-button type="text" size="mini" class="danger-text" :loading="saving" @click="removeGrantRow(s.row)"
                     >移除</el-button
                   >
                 </div>
-              </div>
-              <div class="department-tools">
-                <span class="demand-muted">部门授权默认包含下级部门；成员数按在职账户统计。</span>
-                <el-button v-if="isGlobal" type="text" @click="openDepartmentImport">导入部门目录</el-button>
-              </div>
-            </el-tab-pane>
-          </el-tabs></template
+              </template>
+            </el-table-column>
+          </el-table>
+          <div class="department-tools">
+            <span class="demand-muted">部门授权默认包含下级部门；成员数按在职账户统计。</span>
+            <el-button v-if="isGlobal" type="text" @click="openDepartmentImport">导入部门目录</el-button>
+          </div></template
         ></el-drawer
       >
       <el-drawer title="后台管理员授权" :visible.sync="rolesVisible" :size="drawerWidth" custom-class="demand-detail-drawer"
@@ -389,7 +386,6 @@ export default {
       memberRows: [],
       candidates: [],
       memberId: '',
-      memberTab: 'users',
       departmentKey: '',
       departmentRows: [],
       departmentList: [],
@@ -422,6 +418,7 @@ export default {
       selectedTableFormKey: '',
       selectedTableFormName: '',
       mobile: window.innerWidth < 768,
+      viewportHeight: window.innerHeight,
       decisions,
       progresses
     }
@@ -436,88 +433,55 @@ export default {
     drawerWidth() {
       return this.mobile ? '100%' : '560px'
     },
+    grantRows() {
+      // 只拼接原对象引用，表格内的 v-model 才能直接改两套数组
+      return [...this.departmentRows, ...this.memberRows]
+    },
+    grantTableMaxHeight() {
+      return Math.max(240, this.viewportHeight - (this.mobile ? 470 : 440))
+    },
     selectAllFill: {
       get() {
-        return this.memberRows.length > 0 && this.memberRows.every((m) => m.canFill)
+        return this.grantRows.length > 0 && this.grantRows.every((r) => r.canFill)
       },
       set(value) {
-        this.memberRows.forEach((m) => {
-          m.canFill = value
+        this.grantRows.forEach((r) => {
+          r.canFill = value
         })
       }
     },
     selectAllHandle: {
       get() {
-        return this.memberRows.length > 0 && this.memberRows.every((m) => m.canHandle)
+        return this.grantRows.length > 0 && this.grantRows.every((r) => r.canHandle)
       },
       set(value) {
-        this.memberRows.forEach((m) => {
-          m.canHandle = value
+        this.grantRows.forEach((r) => {
+          r.canHandle = value
         })
       }
     },
     fillIndeterminate() {
-      return !this.selectAllFill && this.memberRows.some((m) => m.canFill)
+      return !this.selectAllFill && this.grantRows.some((r) => r.canFill)
     },
     handleIndeterminate() {
-      return !this.selectAllHandle && this.memberRows.some((m) => m.canHandle)
+      return !this.selectAllHandle && this.grantRows.some((r) => r.canHandle)
     },
     selectAllManage: {
       get() {
-        return this.memberRows.length > 0 && this.memberRows.every((m) => m.canManage)
+        return this.grantRows.length > 0 && this.grantRows.every((r) => r.canManage)
       },
       set(value) {
-        this.memberRows.forEach((m) => {
-          m.canManage = value
+        this.grantRows.forEach((r) => {
+          r.canManage = value
         })
       }
     },
     manageIndeterminate() {
-      return !this.selectAllManage && this.memberRows.some((m) => m.canManage)
-    },
-    selectAllDeptFill: {
-      get() {
-        return this.departmentRows.length > 0 && this.departmentRows.every((d) => d.canFill)
-      },
-      set(value) {
-        this.departmentRows.forEach((d) => {
-          d.canFill = value
-        })
-      }
-    },
-    selectAllDeptHandle: {
-      get() {
-        return this.departmentRows.length > 0 && this.departmentRows.every((d) => d.canHandle)
-      },
-      set(value) {
-        this.departmentRows.forEach((d) => {
-          d.canHandle = value
-        })
-      }
-    },
-    selectAllDeptManage: {
-      get() {
-        return this.departmentRows.length > 0 && this.departmentRows.every((d) => d.canManage)
-      },
-      set(value) {
-        this.departmentRows.forEach((d) => {
-          d.canManage = value
-        })
-      }
-    },
-    deptFillIndeterminate() {
-      return !this.selectAllDeptFill && this.departmentRows.some((d) => d.canFill)
-    },
-    deptHandleIndeterminate() {
-      return !this.selectAllDeptHandle && this.departmentRows.some((d) => d.canHandle)
-    },
-    deptManageIndeterminate() {
-      return !this.selectAllDeptManage && this.departmentRows.some((d) => d.canManage)
+      return !this.selectAllManage && this.grantRows.some((r) => r.canManage)
     },
     hasManager() {
-      return (
-        this.memberRows.some((m) => m.canManage) ||
-        this.departmentRows.some((d) => d.canManage && Number(d.memberCount) > 0)
+      return this.grantRows.some(
+        (r) => r.canManage && (r.rowType === 'member' || Number(r.memberCount) > 0)
       )
     },
     filteredTableForms() {
@@ -549,6 +513,7 @@ export default {
   methods: {
     resize() {
       this.mobile = window.innerWidth < 768
+      this.viewportHeight = window.innerHeight
     },
     plain(v) {
       return new DOMParser().parseFromString(v || '', 'text/html').body.textContent || ''
@@ -708,16 +673,18 @@ export default {
         return
       }
       this.selected = form
-      this.memberTab = 'users'
       const [members, departments, departmentRows] = await Promise.all([
         api.members(form.formKey),
         api.departments(),
         api.departmentMembers(form.formKey)
       ])
-      this.memberRows = members.data || []
+      this.memberRows = (members.data || []).map((m) => ({ ...m, rowType: 'member' }))
       this.departmentList = departments.data || []
       this.departmentOptions = this.buildDepartmentTree(this.departmentList)
-      this.departmentRows = departmentRows.data || []
+      this.departmentRows = (departmentRows.data || []).map((d) => ({
+        ...d,
+        rowType: 'department'
+      }))
       this.departmentKey = ''
       this.memberId = ''
       await this.searchUsers('')
@@ -733,25 +700,43 @@ export default {
       this.memberRows.push({
         userId: user.id,
         name: user.name,
+        rowType: 'member',
         canFill: false,
         canHandle: false,
         canManage: false
       })
     },
-    async saveMemberRow(member) {
+    grantRowKey(row) {
+      return row.rowType === 'department' ? `department:${row.deptKey}` : `member:${row.userId}`
+    },
+    grantLabel(row) {
+      return row.rowType === 'department'
+        ? `${row.name}（含下级 ${Number(row.memberCount || 0)} 人）`
+        : row.name
+    },
+    grantPayload(row) {
+      return { canFill: !!row.canFill, canHandle: !!row.canHandle, canManage: !!row.canManage }
+    },
+    persistGrant(row) {
+      const payload = this.grantPayload(row)
+      return row.rowType === 'department'
+        ? api.saveDepartmentMember(this.selected.formKey, row.deptKey, payload)
+        : api.saveMember(this.selected.formKey, row.userId, payload)
+    },
+    async saveGrantRow(row) {
       if (!this.hasManager)
         return this.$message.warning('每个收集单至少保留一名有效单据管理员')
       this.saving = true
       try {
-        await api.saveMember(this.selected.formKey, member.userId, member)
-        this.$message.success('成员权限已保存')
+        await this.persistGrant(row)
+        this.$message.success(row.rowType === 'department' ? '部门权限已保存' : '成员权限已保存')
         window.dispatchEvent(new Event('demand-updated'))
       } finally {
         this.saving = false
       }
     },
-    async saveAllMembers() {
-      if (!this.memberRows.length) return this.$message.warning('请先添加成员')
+    async saveAllGrants() {
+      if (!this.grantRows.length) return this.$message.warning('请先添加部门或成员')
       if (!this.hasManager)
         return this.$message.warning('每个收集单至少保留一名有效单据管理员')
       this.bulkSaving = true
@@ -759,70 +744,30 @@ export default {
       let failed = 0
       try {
         // 先授予新管理员，再撤销旧管理员，避免中间状态触发最后一名管理员校验。
-        const ordered = [...this.memberRows].sort(
-          (a, b) => Number(!!b.canManage) - Number(!!a.canManage)
+        const ordered = [...this.grantRows].sort(
+          (a, b) =>
+            Number(!!b.canManage) - Number(!!a.canManage) ||
+            (a.rowType === b.rowType ? 0 : a.rowType === 'department' ? -1 : 1)
         )
-        for (const member of ordered) {
+        for (const row of ordered) {
           try {
-            await api.saveMember(this.selected.formKey, member.userId, member)
+            await this.persistGrant(row)
             saved++
           } catch (e) {
             failed++
           }
         }
-        if (failed) this.$message.warning(`已保存 ${saved} 人，${failed} 人保存失败，请重试`)
-        else this.$message.success('成员权限已保存')
+        if (failed) this.$message.warning(`已保存 ${saved} 项，${failed} 项保存失败，请重试`)
+        else this.$message.success('成员与部门权限已保存')
         window.dispatchEvent(new Event('demand-updated'))
       } finally {
         this.bulkSaving = false
       }
     },
-    async saveDepartmentRow(department) {
-      if (!this.hasManager)
-        return this.$message.warning('每个收集单至少保留一名有效单据管理员')
-      this.saving = true
+    async removeGrantRow(row) {
+      const kind = row.rowType === 'department' ? '部门' : '成员'
       try {
-        await api.saveDepartmentMember(this.selected.formKey, department.deptKey, department)
-        this.$message.success('部门权限已保存')
-        window.dispatchEvent(new Event('demand-updated'))
-      } finally {
-        this.saving = false
-      }
-    },
-    async saveAllDepartments() {
-      if (!this.departmentRows.length) return this.$message.warning('请先添加部门')
-      if (!this.hasManager)
-        return this.$message.warning('每个收集单至少保留一名有效单据管理员')
-      this.bulkSaving = true
-      let saved = 0
-      let failed = 0
-      try {
-        // 先授予新管理员，再撤销旧管理员，避免中间状态触发最后一名管理员校验。
-        const ordered = [...this.departmentRows].sort(
-          (a, b) => Number(!!b.canManage) - Number(!!a.canManage)
-        )
-        for (const department of ordered) {
-          try {
-            await api.saveDepartmentMember(
-              this.selected.formKey,
-              department.deptKey,
-              department
-            )
-            saved++
-          } catch (e) {
-            failed++
-          }
-        }
-        if (failed) this.$message.warning(`已保存 ${saved} 个部门，${failed} 个保存失败，请重试`)
-        else this.$message.success('部门权限已保存')
-        window.dispatchEvent(new Event('demand-updated'))
-      } finally {
-        this.bulkSaving = false
-      }
-    },
-    async removeDepartmentRow(department) {
-      try {
-        await this.$confirm(`确认移除部门「${department.name}」的授权？`, '移除部门授权', {
+        await this.$confirm(`确认移除${kind}「${row.name}」的授权？`, `移除${kind}授权`, {
           type: 'warning',
           confirmButtonText: '确认移除',
           cancelButtonText: '取消'
@@ -832,9 +777,14 @@ export default {
       }
       this.saving = true
       try {
-        await api.removeDepartmentMember(this.selected.formKey, department.deptKey)
-        this.departmentRows = this.departmentRows.filter((d) => d.deptKey !== department.deptKey)
-        this.$message.success('部门授权已移除')
+        if (row.rowType === 'department') {
+          await api.removeDepartmentMember(this.selected.formKey, row.deptKey)
+          this.departmentRows = this.departmentRows.filter((d) => d.deptKey !== row.deptKey)
+        } else {
+          await api.removeMember(this.selected.formKey, row.userId)
+          this.memberRows = this.memberRows.filter((m) => m.userId !== row.userId)
+        }
+        this.$message.success(`${kind}授权已移除`)
         window.dispatchEvent(new Event('demand-updated'))
       } finally {
         this.saving = false
@@ -849,6 +799,7 @@ export default {
         deptKey: department.deptKey,
         name: department.name,
         memberCount: department.memberCount,
+        rowType: 'department',
         canFill: false,
         canHandle: false,
         canManage: false
@@ -892,7 +843,10 @@ export default {
           ])
           this.departmentList = departments.data || []
           this.departmentOptions = this.buildDepartmentTree(this.departmentList)
-          this.departmentRows = departmentRows.data || []
+          this.departmentRows = (departmentRows.data || []).map((d) => ({
+            ...d,
+            rowType: 'department'
+          }))
         }
       } finally {
         this.departmentImportSaving = false
@@ -1035,7 +989,7 @@ export default {
 .member-picker {
   display: flex;
   gap: 12px;
-  margin: 24px 0;
+  margin: 12px 0;
 }
 .member-bulk-bar {
   display: flex;
@@ -1081,6 +1035,30 @@ export default {
   flex: 1 1 180px;
   min-width: 0;
 }
+.member-grant-table {
+  width: 100%;
+  margin: 4px 0 8px;
+}
+.member-grant-name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.member-grant-name-text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.member-grant-actions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+.member-grant-actions .el-button + .el-button {
+  margin-left: 0;
+}
 @media (max-width: 767px) {
   .admin-form-list {
     grid-template-columns: 1fr;
@@ -1094,6 +1072,10 @@ export default {
   .member-bulk-bar .el-button {
     width: 100%;
     margin-left: 0;
+  }
+  .member-grant-actions {
+    flex-direction: column;
+    gap: 2px;
   }
 }
 </style>

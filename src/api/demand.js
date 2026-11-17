@@ -46,6 +46,7 @@ export const configureForm = (key, data) => request.post(`/demand-api/admin/form
 export const voidForm = (key, data) => request.post(`/demand-api/admin/forms/${key}/void`, data)
 export const members = (key) => request.get(`/demand-api/admin/forms/${key}/members`)
 export const saveMember = (key, id, data) => request.post(`/demand-api/admin/forms/${key}/members/${id}`, data)
+export const removeMember = (key, id) => request.delete(`/demand-api/admin/forms/${key}/members/${id}`)
 export const departments = () => request.get('/demand-api/admin/departments')
 export const departmentMembers = (key) => request.get(`/demand-api/admin/forms/${key}/department-members`)
 export const saveDepartmentMember = (key, deptKey, data) =>

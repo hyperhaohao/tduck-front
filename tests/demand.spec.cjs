@@ -14,6 +14,7 @@ const departments = [
   { deptKey: 'D2', name: '研发组', parentKey: 'D1', path: '/D1/D2', sortNo: 2, memberCount: 2 }
 ]
 let departmentGrants = []
+let memberGrants = []
 const row = { id: 'demand-1', title: '优化设备维护记录查询', requestNo: 'REQ-20261113-TEST001', formKey: 'A', formName: '信息化需求征集', submitterName: '测试员工', handlerId: '30', handlerName: '测试经办人', decision: 'ACCEPTED', progress: 'IN_PROGRESS', unread: true, revision: 1, publicVersion: 3, createTime: '2026-11-13 09:00:00', replyTime: '2026-11-13 10:00:00', publicationPublished: false, publicationSkipped: false, publicationVersion: 0, canHandle: true, canManage: true }
 const rowA2 = { ...row, id: 'demand-3', title: '新增报表导出字段', requestNo: 'REQ-20261113-TEST003', revision: 5, unread: false, formName: '信息化需求征集与设备改善需求联合征集（超长名称用于验证省略）' }
 const rowB = { ...row, id: 'demand-2', title: '车间照明改善', requestNo: 'REQ-20261113-TEST002', formKey: 'B', formName: '设备改善需求征集', unread: false }
@@ -26,6 +27,7 @@ async function mockApi(page, role = 'all', opts = {}) {
   calls = []
   options = opts
   departmentGrants = [{ deptKey: 'D1', name: '技术部', memberCount: 3, canFill: false, canHandle: false, canManage: !opts.noDeptManager }]
+  memberGrants = [{ userId: '30', name: '测试经办人', canFill: true, canHandle: true, canManage: true }]
   await page.route('**/*', async route => {
     const url = new URL(route.request().url())
     if (url.hostname !== '127.0.0.1') return route.abort()
@@ -70,6 +72,26 @@ async function mockApi(page, role = 'all', opts = {}) {
     if (/\/demand-api\/admin\/forms\/[^/]+\/purge$/.test(api)) {
       calls.push({ type: 'purge', key: api.split('/')[4] })
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, data: { purged: true }, msg: null }) })
+    }
+    if (/\/demand-api\/admin\/forms\/[^/]+\/members\/[^/]+$/.test(api)) {
+      const key = api.split('/')[4]
+      const memberId = decodeURIComponent(api.split('/').pop())
+      if (route.request().method() === 'POST') {
+        const body = route.request().postDataJSON()
+        calls.push({ type: 'member', key, memberId, body })
+        const index = memberGrants.findIndex((m) => String(m.userId) === memberId)
+        const next = { userId: memberId, name: (memberGrants[index] || {}).name || memberId, ...body }
+        if (index >= 0) memberGrants[index] = next
+        else memberGrants.push(next)
+        return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, data: null, msg: null }) })
+      }
+      if (route.request().method() === 'DELETE') {
+        if (options.failRemoveMember)
+          return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 409, msg: '每个收集单至少保留一名有效单据管理员' }) })
+        calls.push({ type: 'removeMember', key, memberId })
+        memberGrants = memberGrants.filter((m) => String(m.userId) !== memberId)
+        return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, data: null, msg: null }) })
+      }
     }
     if (/\/demand-api\/admin\/forms\/[^/]+\/department-members\/[^/]+$/.test(api)) {
       const key = api.split('/')[4]
@@ -124,7 +146,7 @@ async function mockApi(page, role = 'all', opts = {}) {
       data = scope === 'pending' ? [pending] : role === 'assigned' ? [all[0]] : all
     }
     else if (api === '/demand-api/requests/demand-1') data = detail
-    else if (api === '/demand-api/admin/forms/A/members') data = [{ userId: '30', name: '测试经办人', canHandle: true, canFill: true, canManage: true }]
+    else if (api === '/demand-api/admin/forms/A/members') data = memberGrants
     else if (api === '/demand-api/admin/departments') data = departments
     else if (/^\/demand-api\/admin\/forms\/[^/]+\/department-members$/.test(api)) data = api.includes('/A/') ? departmentGrants : []
     else if (api === '/demand-api/admin/users') data = [{ id: '30', name: '测试经办人' }]
@@ -212,26 +234,27 @@ test('admin member drawer supports column select-all and one-click save', async 
   await page.setViewportSize({ width: 1024, height: 768 }); await login(page); await mockApi(page)
   let saves = 0; page.on('request', req => { if (req.method() === 'POST' && req.url().includes('/demand-api/admin/forms/A/members/30')) saves++ })
   await page.goto('/demand/admin'); await expect(page.getByRole('heading', { name: '后台管理' })).toBeVisible(); await page.getByRole('button', { name: '成员权限' }).first().click()
-  const drawer = page.locator('.demand-detail-drawer'); await expect(drawer.locator('.member-row strong').first()).toHaveText('测试经办人')
+  const drawer = page.locator('.demand-detail-drawer'); const table = drawer.locator('.member-grant-table')
+  const memberRow = table.locator('.el-table__row').filter({ hasText: '测试经办人' }).first(); await expect(memberRow).toBeVisible()
   const fillAll = drawer.locator('.member-bulk-bar .el-checkbox').first(); const handleAll = drawer.locator('.member-bulk-bar .el-checkbox').nth(1)
-  await expect(fillAll).toHaveClass(/is-checked/); await expect(handleAll).toHaveClass(/is-checked/)
-  await fillAll.click(); await expect(fillAll).not.toHaveClass(/is-checked/); await expect(drawer.locator('.member-row .el-checkbox').first()).not.toHaveClass(/is-checked/)
+  await expect(fillAll.locator('.el-checkbox__input')).toHaveClass(/is-indeterminate/); await expect(handleAll.locator('.el-checkbox__input')).toHaveClass(/is-indeterminate/)
+  await fillAll.click(); await expect(fillAll).toHaveClass(/is-checked/); await expect(memberRow.locator('.el-checkbox').first()).toHaveClass(/is-checked/)
+  await fillAll.click(); await expect(fillAll).not.toHaveClass(/is-checked/); await expect(memberRow.locator('.el-checkbox').first()).not.toHaveClass(/is-checked/)
   await fillAll.click(); await expect(fillAll).toHaveClass(/is-checked/)
-  await drawer.getByRole('button', { name: '一键保存' }).first().click(); await expect(page.getByText('成员权限已保存', { exact: true })).toBeVisible(); expect(saves).toBe(1); await noOverflow(page); await page.screenshot({ path: 'test-results/admin-member-bulk.png', fullPage: true, animations: 'disabled' })
+  await drawer.getByRole('button', { name: '一键保存' }).first().click(); await expect(page.getByText('成员与部门权限已保存', { exact: true })).toBeVisible(); expect(saves).toBe(1); expect(calls.filter(c => c.type === 'departmentMember').length).toBeGreaterThan(0)
+  await noOverflow(page); await page.screenshot({ path: 'test-results/admin-member-bulk.png', fullPage: true, animations: 'disabled' })
 })
 test('admin department grants display and reopen', async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 768 }); await login(page); await mockApi(page)
   await page.goto('/demand/admin'); await expect(page.getByRole('heading', { name: '后台管理' })).toBeVisible(); await page.getByRole('button', { name: '成员权限' }).first().click()
-  const drawer = page.locator('.el-drawer').filter({ hasText: '成员与权限' })
-  await drawer.locator('.el-tabs__item').filter({ hasText: '部门' }).click()
-  const pane = drawer.locator('#pane-departments')
-  const existing = pane.locator('.member-row').filter({ hasText: '技术部' }).first()
+  const drawer = page.locator('.el-drawer').filter({ hasText: '成员与权限' }); const table = drawer.locator('.member-grant-table')
+  const existing = table.locator('.el-table__row').filter({ hasText: '技术部' }).first()
   await expect(existing).toBeVisible(); await expect(existing.locator('.el-checkbox').nth(2)).toHaveClass(/is-checked/)
   await page.evaluate(() => { const vm = document.querySelector('.demand-page').__vue__; vm.departmentKey = 'D2'; vm.addDepartment() })
-  const added = pane.locator('.member-row').filter({ hasText: '研发组' }).first()
+  const added = table.locator('.el-table__row').filter({ hasText: '研发组' }).first()
   await added.locator('.el-checkbox').first().click()
-  await pane.getByRole('button', { name: '一键保存' }).click()
-  await expect(page.getByText('部门权限已保存', { exact: true })).toBeVisible()
+  await drawer.getByRole('button', { name: '一键保存' }).click()
+  await expect(page.getByText('成员与部门权限已保存', { exact: true })).toBeVisible()
   const saved = calls.find((c) => c.type === 'departmentMember' && c.deptKey === 'D2')
   expect(saved && saved.body.canFill).toBeTruthy()
   await noOverflow(page); await page.screenshot({ path: 'test-results/admin-department-grants.png', fullPage: true, animations: 'disabled' })
@@ -239,9 +262,7 @@ test('admin department grants display and reopen', async ({ page }) => {
   await page.waitForTimeout(800)
   await page.getByRole('button', { name: '成员权限' }).first().click()
   const reopenedDrawer = page.locator('.el-drawer').filter({ hasText: '成员与权限' })
-  await reopenedDrawer.locator('.el-tabs__item').filter({ hasText: '部门' }).click()
-  const reopened = reopenedDrawer.locator('#pane-departments')
-  const reopenedRow = reopened.locator('.member-row').filter({ hasText: '研发组' }).first()
+  const reopenedRow = reopenedDrawer.locator('.member-grant-table .el-table__row').filter({ hasText: '研发组' }).first()
   await reopenedRow.waitFor({ timeout: 10000 })
   await expect(reopenedRow.locator('.el-checkbox').first()).toHaveClass(/is-checked/)
 })
@@ -433,9 +454,31 @@ test('member drawer manage checkbox blocks removing the last manager', async ({ 
   await page.setViewportSize({ width: 1024, height: 768 }); await login(page); await mockApi(page, 'all', { noDeptManager: true })
   let saves = 0; page.on('request', req => { if (req.method() === 'POST' && req.url().includes('/admin/forms/A/members/')) saves++ })
   await page.goto('/demand/admin'); await page.getByRole('button', { name: '成员权限' }).first().click()
-  const drawer = page.locator('.demand-detail-drawer'); await expect(drawer.getByText('全选可管理', { exact: true }).first()).toBeVisible(); await expect(drawer.getByText('可管理/可公示', { exact: true }).first()).toBeVisible()
-  const manage = drawer.locator('.member-row .el-checkbox').nth(2); await expect(manage).toHaveClass(/is-checked/); await manage.click()
+  const drawer = page.locator('.demand-detail-drawer'); await expect(drawer.getByText('全选可管理', { exact: true }).first()).toBeVisible(); await expect(drawer.getByRole('columnheader', { name: '管理' })).toBeVisible()
+  const memberRow = drawer.locator('.member-grant-table .el-table__row').filter({ hasText: '测试经办人' }).first()
+  const manage = memberRow.locator('.el-checkbox').nth(2); await expect(manage).toHaveClass(/is-checked/); await manage.click()
   await drawer.getByRole('button', { name: '一键保存' }).first().click(); await expect(page.getByText('每个收集单至少保留一名有效单据管理员', { exact: true })).toBeVisible(); expect(saves).toBe(0)
+})
+test('admin member removal asks confirmation and removes the row', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 }); await login(page); await mockApi(page)
+  await page.goto('/demand/admin'); await page.getByRole('button', { name: '成员权限' }).first().click()
+  const drawer = page.locator('.demand-detail-drawer'); const table = drawer.locator('.member-grant-table')
+  const memberRow = table.locator('.el-table__row').filter({ hasText: '测试经办人' }).first()
+  await memberRow.getByRole('button', { name: '移除' }).click()
+  await expect(page.getByText('移除成员授权', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '确认移除' }).click()
+  await expect(page.getByText('成员授权已移除', { exact: true })).toBeVisible()
+  expect(calls.find(c => c.type === 'removeMember' && c.memberId === '30')).toBeTruthy()
+  await expect(table.getByText('测试经办人', { exact: true })).toHaveCount(0)
+})
+test('admin member removal keeps the last manager', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 }); await login(page); await mockApi(page, 'all', { noDeptManager: true, failRemoveMember: true })
+  await page.goto('/demand/admin'); await page.getByRole('button', { name: '成员权限' }).first().click()
+  const drawer = page.locator('.demand-detail-drawer'); const table = drawer.locator('.member-grant-table')
+  const memberRow = table.locator('.el-table__row').filter({ hasText: '测试经办人' }).first()
+  await memberRow.getByRole('button', { name: '移除' }).click(); await page.getByRole('button', { name: '确认移除' }).click()
+  await expect(page.getByText('每个收集单至少保留一名有效单据管理员', { exact: true })).toBeVisible()
+  await expect(memberRow).toBeVisible()
 })
 
 test('small screens keep export available and hide batch controls', async ({ page }) => {
