@@ -283,42 +283,42 @@
             :max-height="grantTableMaxHeight"
             empty-text="暂无授权，请先添加成员或部门"
           >
-            <el-table-column v-if="!mobile" label="类型" width="60" align="center">
+            <el-table-column v-if="!mobile" label="类型" width="56" align="center">
               <template slot-scope="s">
                 <el-tag size="mini" :type="s.row.rowType === 'department' ? 'success' : 'info'">{{
                   s.row.rowType === 'department' ? '部门' : '成员'
                 }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="名称" :min-width="mobile ? 90 : 140">
+            <el-table-column label="名称" :min-width="mobile ? 90 : 170">
               <template slot-scope="s">
                 <div class="member-grant-name" :title="grantLabel(s.row)">
                   <el-tag v-if="mobile" size="mini" :type="s.row.rowType === 'department' ? 'success' : 'info'">{{
                     s.row.rowType === 'department' ? '部门' : '成员'
                   }}</el-tag
                   ><span class="member-grant-name-text">{{ s.row.name }}</span
-                  ><span v-if="s.row.rowType === 'department' && !mobile" class="demand-muted"
+                  ><span v-if="s.row.rowType === 'department' && !mobile" class="demand-muted member-grant-count"
                     >（含下级 {{ Number(s.row.memberCount || 0) }} 人）</span
                   >
                 </div>
               </template>
             </el-table-column>
-            <el-table-column label="填报" :width="mobile ? 44 : 62" align="center">
+            <el-table-column label="填报" :width="mobile ? 44 : 58" align="center">
               <template slot-scope="s"
                 ><el-checkbox v-model="s.row.canFill" :aria-label="s.row.name + '可填报'"
               /></template>
             </el-table-column>
-            <el-table-column label="经办" :width="mobile ? 44 : 62" align="center">
+            <el-table-column label="经办" :width="mobile ? 44 : 58" align="center">
               <template slot-scope="s"
                 ><el-checkbox v-model="s.row.canHandle" :aria-label="s.row.name + '可经办'"
               /></template>
             </el-table-column>
-            <el-table-column label="管理" :width="mobile ? 44 : 62" align="center">
+            <el-table-column label="管理" :width="mobile ? 44 : 58" align="center">
               <template slot-scope="s"
                 ><el-checkbox v-model="s.row.canManage" :aria-label="s.row.name + '可管理/可公示'"
               /></template>
             </el-table-column>
-            <el-table-column label="操作" :width="mobile ? 60 : 104" align="center">
+            <el-table-column label="操作" :width="mobile ? 60 : 100" align="center">
               <template slot-scope="s">
                 <div class="member-grant-actions">
                   <el-button type="text" size="mini" :loading="saving" @click="saveGrantRow(s.row)">保存</el-button
@@ -1046,10 +1046,16 @@ export default {
   min-width: 0;
 }
 .member-grant-name-text {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+.member-grant-count {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-size: 12px;
 }
 .member-grant-actions {
   display: flex;
