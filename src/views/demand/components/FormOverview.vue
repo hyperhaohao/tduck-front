@@ -1,35 +1,46 @@
 <template>
-  <div class="form-overview" v-loading="loading">
+  <div class="form-overview demand-card-grid" v-loading="loading">
     <article
       v-for="item in items"
       :key="item.formKey"
-      class="demand-card form-card"
+      class="demand-card demand-card-full demand-card-clickable form-card"
       role="button"
       tabindex="0"
       :aria-label="`进入${plain(item.formName)}`"
       @click="$emit('select', item)"
       @keyup.enter="$emit('select', item)"
     >
-      <h3>{{ plain(item.formName) }}</h3>
-      <div class="demand-tags">
-        <el-tag size="small">{{ totalLabel }} {{ number(item.total) }}</el-tag
-        ><el-tag v-if="number(item.unread)" type="danger" size="small"
-          >未读 {{ number(item.unread) }}</el-tag
-        ><el-tag v-if="hasPending(item)" type="info" size="small">待办 {{ number(item.pending) }}</el-tag>
+      <demand-card-cover :label="totalLabel + '汇总'" />
+      <div class="demand-card-body">
+        <div class="demand-card-title-row">
+          <h3 class="demand-card-title">{{ plain(item.formName) }}</h3>
+        </div>
+        <div class="demand-card-meta">
+          <span class="demand-card-meta-end">{{
+            item.lastUpdate ? '最近更新 ' + date(item.lastUpdate) : '暂无更新'
+          }}</span>
+        </div>
+        <div class="demand-tags demand-card-tags">
+          <el-tag size="small">{{ totalLabel }} {{ number(item.total) }}</el-tag
+          ><el-tag v-if="number(item.unread)" type="danger" size="small"
+            >未读 {{ number(item.unread) }}</el-tag
+          ><el-tag v-if="hasPending(item)" type="info" size="small">待办 {{ number(item.pending) }}</el-tag>
+        </div>
       </div>
-      <div class="demand-card-footer">
-        <span class="demand-muted">{{
-          item.lastUpdate ? '最近更新 ' + date(item.lastUpdate) : '暂无更新'
-        }}</span
-        ><el-button type="text" @click.stop="$emit('select', item)">{{ actionText }}</el-button>
+      <div class="demand-card-actions">
+        <div class="demand-card-actions-main">
+          <span class="demand-card-link">{{ actionText }}</span>
+        </div>
       </div>
     </article>
     <el-empty v-if="!loading && !items.length" :description="emptyText" />
   </div>
 </template>
 <script>
+import DemandCardCover from './DemandCardCover'
 export default {
   name: 'FormOverview',
+  components: { DemandCardCover },
   props: {
     items: { type: Array, default: () => [] },
     loading: { type: Boolean, default: false },
@@ -54,28 +65,7 @@ export default {
 }
 </script>
 <style scoped>
-.form-overview {
-  display: grid;
-  gap: 18px;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-}
 .form-card {
   cursor: pointer;
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-.form-card:hover,
-.form-card:focus {
-  border-color: #3370ff;
-  outline: none;
-  box-shadow: 0 2px 12px rgba(51, 112, 255, 0.12);
-}
-.form-card h3 {
-  overflow-wrap: anywhere;
-}
-@media (max-width: 767px) {
-  .form-overview {
-    grid-template-columns: 1fr;
-    gap: 12px;
-  }
 }
 </style>

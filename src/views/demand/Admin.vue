@@ -15,32 +15,88 @@
       <el-tabs v-model="tab"
         ><el-tab-pane label="收集单管理" name="forms"
           ><div class="demand-toolbar">
-            <el-input v-model="keyword" placeholder="搜索收集单" clearable /><el-button
-              @click="$router.push('/project/my')"
-              >原表单后台</el-button
-            >
+            <div class="demand-pill-group" role="group" aria-label="按状态筛选收集单">
+              <button
+                v-for="item in statusOptions"
+                :key="item.value"
+                type="button"
+                class="demand-pill"
+                :class="{ 'is-active': statusFilter === item.value }"
+                @click="statusFilter = item.value"
+              >
+                <span class="demand-pill-dot" :style="{ backgroundColor: item.color }" />{{ item.label }}
+              </button>
+            </div>
+            <div class="demand-toolbar-end">
+              <el-input v-model="keyword" placeholder="搜索收集单" clearable prefix-icon="el-icon-search" />
+              <el-button v-if="isGlobal" @click="$router.push('/project/my')">原表单后台</el-button>
+            </div>
           </div>
-          <div class="admin-form-list">
-            <article v-for="form in filtered" :key="form.formKey" class="demand-card">
-              <h3>{{ plain(form.name) }}</h3>
-              <p>{{ form.summary || plain(form.description) || '尚未配置需求收集说明' }}</p>
-              <div class="demand-tags">
-                <el-tag :type="form.published && Number(form.status) === 2 ? 'success' : 'info'" size="small">{{
-                  form.published && Number(form.status) === 2 ? '已开放' : '未开放'
-                }}</el-tag
-                ><el-tag v-if="form.voided" size="small" type="danger">已作废</el-tag
-                ><el-tag v-if="Number(form.demandCount) > 0" size="small" type="info"
-                  >{{ form.demandCount }} 条需求</el-tag
-                ><el-tag v-if="form.allowAnonymous" size="small" type="info">可匿名</el-tag>
+          <div class="admin-form-list demand-card-grid">
+            <article
+              v-for="form in filtered"
+              :key="form.formKey"
+              class="demand-card demand-card-full"
+              :class="{ 'is-voided': form.voided }"
+            >
+              <demand-card-cover label="需求收集" />
+              <div class="demand-card-body">
+                <div class="demand-card-title-row">
+                  <h3 class="demand-card-title" :title="plain(form.name)" @click="editOriginal(form)">
+                    {{ plain(form.name) }}
+                  </h3>
+                </div>
+                <p class="demand-card-desc" :title="form.summary || plain(form.description)">
+                  {{ form.summary || plain(form.description) || '尚未配置需求收集说明' }}
+                </p>
+                <div class="demand-card-meta">
+                  <span class="demand-card-status" :class="formStatus(form).className">
+                    <span class="demand-card-status-dot" aria-hidden="true" />
+                    <span>{{ formStatus(form).text }}</span>
+                  </span>
+                  <span class="demand-card-meta-end">
+                    <span class="demand-card-count">{{
+                      Number(form.demandCount) > 0 ? form.demandCount + ' 条需求' : '暂无需求'
+                    }}</span>
+                  </span>
+                </div>
+                <div class="demand-tags demand-card-tags">
+                  <el-tag v-if="form.voided" size="small" type="danger">已作废</el-tag>
+                  <el-tag v-if="form.allowAnonymous" size="small" type="info">可匿名</el-tag>
+                </div>
               </div>
-              <div class="demand-card-footer admin-card-actions">
-                <el-button type="text" @click="editOriginal(form)">设计与发布</el-button
-                ><el-button type="text" @click="openConfig(form)">收集配置</el-button
-                ><el-button type="text" @click="openMembers(form)">成员权限</el-button
-                ><el-button v-if="form.visibility" type="text" class="danger-text" @click="toggleVoid(form)">{{
-                  form.voided ? '恢复' : '作废'
-                }}</el-button
-                ><el-button type="text" class="danger-text" @click="deleteCollection(form)">删除</el-button>
+              <div class="demand-card-actions">
+                <div class="demand-card-actions-main">
+                  <el-button size="mini" class="demand-card-action is-primary" @click="editOriginal(form)"
+                    >设计与发布</el-button
+                  ><el-button size="mini" class="demand-card-action is-secondary" @click="openConfig(form)"
+                    >收集配置</el-button
+                  ><el-button size="mini" class="demand-card-action is-secondary" @click="openMembers(form)"
+                    >成员权限</el-button
+                  >
+                </div>
+                <el-dropdown
+                  class="demand-card-more"
+                  trigger="click"
+                  placement="bottom-end"
+                  @command="handleCardCommand($event, form)"
+                >
+                  <button type="button" class="demand-card-more-trigger" aria-label="更多操作">
+                    <i class="el-icon-more" aria-hidden="true" />
+                  </button>
+                  <el-dropdown-menu slot="dropdown" class="demand-card-more-menu" role="menu">
+                    <el-dropdown-item
+                      v-if="form.visibility"
+                      :command="form.voided ? 'restore' : 'void'"
+                      role="menuitem"
+                      :class="form.voided ? '' : 'is-warning'"
+                      >{{ form.voided ? '恢复' : '作废' }}</el-dropdown-item
+                    >
+                    <el-dropdown-item command="delete" role="menuitem" class="is-danger" divided
+                      >删除</el-dropdown-item
+                    >
+                  </el-dropdown-menu>
+                </el-dropdown>
               </div>
             </article>
           </div>
@@ -87,13 +143,15 @@
               :data="rows"
               empty-text="暂无需求"
               @row-click="openDetail"
-              ><el-table-column label="需求" min-width="150"
+              ><el-table-column label="需求" :width="roomy ? 360 : null" min-width="150"
                 ><template slot-scope="s"
                   ><div class="request-title" :title="s.row.title">
                     {{ s.row.title }}
                     <el-tag v-if="s.row.publicationPublished" type="success" size="mini">已公示</el-tag>
+                    <el-tag v-else-if="s.row.publicationArchived" type="info" size="mini">已归档</el-tag>
                     <el-tag v-else-if="s.row.publicationSkipped" type="info" size="mini">不公示</el-tag>
                     <el-tag v-else-if="s.row.decision !== 'REJECTED' && s.row.progress !== 'COMPLETED'" type="warning" size="mini">待公示</el-tag>
+                    <el-tag v-if="s.row.followupPending" type="warning" size="mini">追问</el-tag>
                   </div>
                   <small class="demand-muted request-meta" :title="tableMeta(s.row)">{{
                     tableMeta(s.row)
@@ -107,7 +165,7 @@
                 prop="handlerName"
                 label="经办人"
                 width="86"
-                class-name="nowrap-cell" /><el-table-column label="处理状态" min-width="120"
+                class-name="nowrap-cell" /><el-table-column label="处理状态" width="110"
                 ><template slot-scope="s"
                   >{{ decisions[s.row.decision] }} / {{ progresses[s.row.progress] }}</template
                 ></el-table-column
@@ -117,22 +175,41 @@
                 ><template slot-scope="s"
                   ><el-button type="text" @click.stop="openDetail(s.row)">分派 / 公示</el-button></template
                 ></el-table-column
-              ></el-table
+              ><el-table-column v-if="roomy" />
+              </el-table
             >
             <div class="demand-list-mobile">
-              <article v-for="row in rows" :key="row.id" class="demand-card" @click="openDetail(row)">
-                <h3>{{ row.title }}</h3>
-                <small class="demand-muted">{{ tableMeta(row) }}</small>
-                <p>{{ row.submitterName }} · {{ row.handlerName || '待分派' }}</p>
-                <p class="demand-muted">提报 {{ date(row.createTime) }}</p>
-                <div class="demand-card-footer">
-                  <div class="demand-tags">
+              <article
+                v-for="row in rows"
+                :key="row.id"
+                class="demand-card demand-card-compact demand-card-clickable"
+                @click="openDetail(row)"
+              >
+                <div class="demand-card-body">
+                  <div class="demand-card-title-row">
+                    <h3 class="demand-card-title">{{ row.title }}</h3>
+                  </div>
+                  <p class="demand-card-kicker">{{ tableMeta(row) }}</p>
+                  <p class="demand-card-line">{{ row.submitterName }} · {{ row.handlerName || '待分派' }}</p>
+                  <p class="demand-card-time">提报 {{ date(row.createTime) }}</p>
+                  <div class="demand-tags demand-card-tags">
                     <el-tag size="small">{{ decisions[row.decision] }}</el-tag
                     ><el-tag v-if="row.publicationPublished" type="success" size="small">已公示</el-tag
+                    ><el-tag v-else-if="row.publicationArchived" type="info" size="small">已归档</el-tag
                     ><el-tag v-else-if="row.publicationSkipped" type="info" size="small">不公示</el-tag
-                    ><el-tag v-else type="warning" size="small">待公示</el-tag>
+                    ><el-tag v-else type="warning" size="small">待公示</el-tag
+                    ><el-tag v-if="row.followupPending" type="warning" size="small">追问</el-tag>
                   </div>
-                  <el-button type="text" @click.stop="openDetail(row)">分派 / 公示</el-button>
+                </div>
+                <div class="demand-card-actions">
+                  <div class="demand-card-actions-main">
+                    <el-button
+                      size="mini"
+                      class="demand-card-action is-primary"
+                      @click.stop="openDetail(row)"
+                      >分派 / 公示</el-button
+                    >
+                  </div>
                 </div>
               </article>
               <el-empty v-if="!rows.length" description="暂无需求" />
@@ -146,6 +223,8 @@
               @current-change="loadTable"
             />
           </template></el-tab-pane
+      ><el-tab-pane label="组织架构" name="org" lazy
+        ><org-structure v-if="tab === 'org'" /></el-tab-pane
       ></el-tabs>
       <el-dialog title="新建需求收集单" :visible.sync="createVisible" :width="dialogWidth" :close-on-click-modal="false"
         ><el-form label-position="top"
@@ -163,14 +242,17 @@
       >
       <el-dialog title="全局回收站" :visible.sync="recycleVisible" :width="dialogWidth" append-to-body>
         <el-table v-loading="recycleLoading" :data="recycleRows" empty-text="回收站为空">
-          <el-table-column label="收集单" min-width="180">
+          <el-table-column label="收集单" :min-width="mobile ? 120 : 180">
             <template slot-scope="s"
               ><div class="recycle-title">{{ plain(s.row.name) }}</div>
-              <small class="demand-muted">删除于 {{ date(s.row.deletedAt) }}</small></template
+              <small class="demand-muted"
+                >删除于 {{ date(s.row.deletedAt)
+                }}<template v-if="mobile"> · 需求 {{ s.row.demandCount }} / 答卷 {{ s.row.dataCount }}</template></small
+              ></template
             >
           </el-table-column>
-          <el-table-column prop="demandCount" label="需求" width="70" />
-          <el-table-column label="操作" width="150">
+          <el-table-column v-if="!mobile" prop="demandCount" label="需求" width="70" />
+          <el-table-column label="操作" :width="mobile ? 122 : 150">
             <template slot-scope="s"
               ><el-button type="text" @click="restoreDeleted(s.row)">恢复</el-button
               ><el-button
@@ -227,7 +309,7 @@
               style="width: 100%" /></el-form-item
           ><el-form-item label="向首页开放"
             ><el-switch v-model="config.published" />
-            <p class="demand-muted">须同时在原表单后台发布，才会进入员工可见列表。</p></el-form-item
+            <p class="demand-muted">须同时在原表单设计器的“发布”页发布，才会进入员工可见列表。</p></el-form-item
           ><el-button type="primary" :loading="saving" @click="saveConfig">保存配置</el-button></el-form
         ></el-drawer
       >
@@ -241,27 +323,68 @@
           <p class="demand-muted">
             填报、经办与管理权限分别授予，可同时拥有；「管理」即可管理/可公示。下表同时列出成员与部门授权，类型列区分，全选与一键保存对两类同时生效。成员与部门授权取并集，部门授权默认包含下级部门。创建人默认是单据管理员；单据管理员可在待我处理查看本收集单全部未办结需求，并分派、公示、跳过公示、代填处理结果。每个收集单至少保留一名有效单据管理员。
           </p>
-          <div class="member-picker">
-            <el-cascader
-              v-model="departmentKey"
-              :options="departmentOptions"
-              :props="departmentProps"
-              filterable
-              clearable
-              placeholder="选择部门（可含下级）"
-              style="width: 100%"
-            /><el-button @click="addDepartment">添加部门</el-button>
-          </div>
-          <div class="member-picker">
-            <el-select
-              v-model="memberId"
-              filterable
-              remote
-              :remote-method="searchUsers"
-              placeholder="搜索姓名选择人员"
-              style="width: 100%"
-              ><el-option v-for="user in candidates" :key="user.id" :label="user.name" :value="user.id" /></el-select
-            ><el-button @click="addMember">添加成员</el-button>
+          <div class="member-combo">
+            <el-popover
+              ref="memberPopover"
+              v-model="comboVisible"
+              trigger="manual"
+              placement="bottom-start"
+              :width="comboPanelWidth"
+              :visible-arrow="false"
+              popper-class="member-tree-popper"
+              @show="syncComboPanelWidth"
+            >
+              <div class="member-tree-panel" @keydown.esc.stop="closeCombo">
+                <el-tree
+                  ref="memberTree"
+                  class="member-tree"
+                  :data="comboTree"
+                  node-key="id"
+                  default-expand-all
+                  :indent="mobile ? 12 : 18"
+                  :filter-node-method="filterComboNode"
+                  empty-text="暂无部门或成员"
+                >
+                  <template slot-scope="{ data }"
+                    ><div class="member-tree-row" :class="['is-' + data.type, { 'is-added': isComboAdded(data) }]">
+                      <template v-if="data.type !== 'group'">
+                        <el-tag size="mini" :type="data.type === 'department' ? 'success' : 'info'">{{
+                          data.type === 'department' ? '部门' : '成员'
+                        }}</el-tag>
+                        <span class="member-tree-name" :title="comboNodeTitle(data)">{{ data.name }}</span>
+                        <span class="member-tree-hint">{{ comboNodeHint(data) }}</span>
+                        <button
+                          type="button"
+                          class="member-tree-circle"
+                          :class="{ 'is-added': isComboAdded(data) }"
+                          :disabled="isComboAdded(data)"
+                          :aria-label="comboCircleLabel(data)"
+                          @click.stop="addComboNode(data)"
+                        >
+                          <i v-if="isComboAdded(data)" class="el-icon-check" />
+                        </button>
+                      </template>
+                      <template v-else>
+                        <span class="member-tree-name">{{ data.name }}</span>
+                        <span class="member-tree-hint">{{ comboNodeHint(data) }}</span>
+                      </template>
+                    </div></template
+                  >
+                </el-tree>
+              </div>
+              <el-input
+                slot="reference"
+                ref="comboInput"
+                v-model="comboText"
+                clearable
+                prefix-icon="el-icon-search"
+                placeholder="搜索部门或成员，点击圆圈添加"
+                @focus="openCombo"
+                @click.native="openCombo"
+                @keydown.esc.native.stop="closeCombo"
+              />
+            </el-popover>
+            <p class="demand-muted member-combo-tip">点击部门行展开或收起，点击圆圈加入下表；部门授权默认包含下级部门。</p>
           </div>
           <div class="member-bulk-bar">
             <el-checkbox v-model="selectAllFill" :indeterminate="fillIndeterminate" :disabled="!grantRows.length"
@@ -363,11 +486,13 @@ import * as api from '@/api/demand'
 import { createFormRequest } from '@/api/project/form'
 import { refreshDemand, decisions, progresses } from '@/utils/demand'
 import DemandDetail from './components/DemandDetail'
+import DemandCardCover from './components/DemandCardCover'
 import FormOverview from './components/FormOverview'
+import OrgStructure from './components/OrgStructure'
 import exportMixin from './exportMixin'
 export default {
   name: 'DemandAdmin',
-  components: { DemandDetail, FormOverview },
+  components: { DemandDetail, DemandCardCover, FormOverview, OrgStructure },
   mixins: [exportMixin],
   data() {
     return {
@@ -378,6 +503,13 @@ export default {
       bulkSaving: false,
       forms: [],
       keyword: '',
+      statusFilter: '',
+      statusOptions: [
+        { value: '', label: '全部', color: '#3370ff' },
+        { value: 'live', label: '已开放', color: '#409eff' },
+        { value: 'idle', label: '未开放', color: '#909399' },
+        { value: 'voided', label: '已作废', color: '#f56c6c' }
+      ],
       tab: 'forms',
       selected: null,
       config: {},
@@ -385,18 +517,12 @@ export default {
       membersVisible: false,
       memberRows: [],
       candidates: [],
-      memberId: '',
-      departmentKey: '',
       departmentRows: [],
       departmentList: [],
-      departmentOptions: [],
-      departmentProps: {
-        value: 'deptKey',
-        label: 'name',
-        children: 'children',
-        checkStrictly: true,
-        emitPath: false
-      },
+      departmentRoster: [],
+      comboText: '',
+      comboVisible: false,
+      comboPanelWidth: 360,
       departmentImportVisible: false,
       departmentImportText: '',
       departmentImportSaving: false,
@@ -418,6 +544,7 @@ export default {
       selectedTableFormKey: '',
       selectedTableFormName: '',
       mobile: window.innerWidth < 768,
+      roomy: window.innerWidth >= 1440,
       viewportHeight: window.innerHeight,
       decisions,
       progresses
@@ -425,7 +552,11 @@ export default {
   },
   computed: {
     filtered() {
-      return this.forms.filter((f) => this.plain(f.name).includes(this.keyword))
+      return this.forms.filter((form) => {
+        const keywordMatch = this.plain(form.name).includes(this.keyword)
+        const statusMatch = !this.statusFilter || this.formStatus(form).key === this.statusFilter
+        return keywordMatch && statusMatch
+      })
     },
     dialogWidth() {
       return this.mobile ? '94%' : '520px'
@@ -436,6 +567,51 @@ export default {
     grantRows() {
       // 只拼接原对象引用，表格内的 v-model 才能直接改两套数组
       return [...this.departmentRows, ...this.memberRows]
+    },
+    comboTree() {
+      // 只依赖部门目录与名册；不要依赖授权行，否则每次添加都会重建树并丢失展开/滚动状态
+      const nodes = new Map()
+      this.departmentList.forEach((department) => {
+        nodes.set(department.deptKey, {
+          id: 'dept:' + department.deptKey,
+          type: 'department',
+          deptKey: department.deptKey,
+          name: department.name,
+          label: this.departmentLabel(department),
+          memberCount: department.memberCount,
+          children: []
+        })
+      })
+      const roots = []
+      this.departmentList.forEach((department) => {
+        const node = nodes.get(department.deptKey)
+        const parent = department.parentKey ? nodes.get(department.parentKey) : null
+        if (parent && parent !== node) parent.children.push(node)
+        else roots.push(node)
+      })
+      const unassigned = []
+      this.departmentRoster.forEach((row) => {
+        const node = {
+          id: 'member:' + row.userId + ':' + (row.deptKey || 'none'),
+          type: 'member',
+          userId: String(row.userId),
+          name: row.name,
+          label: row.name,
+          children: []
+        }
+        const parent = row.deptKey ? nodes.get(row.deptKey) : null
+        if (parent) parent.children.push(node)
+        else unassigned.push(node)
+      })
+      if (unassigned.length)
+        roots.push({
+          id: 'group:unassigned',
+          type: 'group',
+          name: '未分配部门',
+          label: '未分配部门',
+          children: unassigned
+        })
+      return roots
     },
     grantTableMaxHeight() {
       return Math.max(240, this.viewportHeight - (this.mobile ? 470 : 440))
@@ -493,6 +669,15 @@ export default {
   watch: {
     tab(v) {
       if (v === 'table') this.loadTableView()
+    },
+    comboText(value) {
+      this.applyComboFilter(value)
+    },
+    membersVisible(value) {
+      if (!value) {
+        this.comboVisible = false
+        this.comboText = ''
+      }
     }
   },
   async created() {
@@ -507,13 +692,19 @@ export default {
     }
     window.addEventListener('resize', this.resize)
   },
+  mounted() {
+    document.addEventListener('mousedown', this.onComboOutside)
+  },
   beforeDestroy() {
     window.removeEventListener('resize', this.resize)
+    document.removeEventListener('mousedown', this.onComboOutside)
   },
   methods: {
     resize() {
       this.mobile = window.innerWidth < 768
+      this.roomy = window.innerWidth >= 1440
       this.viewportHeight = window.innerHeight
+      if (this.comboVisible) this.syncComboPanelWidth()
     },
     plain(v) {
       return new DOMParser().parseFromString(v || '', 'text/html').body.textContent || ''
@@ -538,8 +729,23 @@ export default {
         this.saving = false
       }
     },
-    editOriginal(form) {
+    async editOriginal(form) {
+      try {
+        await api.ensureDepartmentField(form.formKey)
+      } catch (e) {
+        // 字段补入失败不阻塞设计器；填写接口会兜底注入
+      }
       this.$router.push({ path: '/project/form', query: { key: form.formKey } })
+    },
+    formStatus(form) {
+      if (form.voided) return { key: 'voided', text: '已停止', className: 'is-voided' }
+      if (form.published && Number(form.status) === 2)
+        return { key: 'live', text: '已开放', className: 'is-live' }
+      return { key: 'idle', text: '未开放', className: 'is-idle' }
+    },
+    handleCardCommand(command, form) {
+      if (command === 'void' || command === 'restore') return this.toggleVoid(form)
+      if (command === 'delete') return this.deleteCollection(form)
     },
     openConfig(form) {
       this.selected = form
@@ -673,37 +879,134 @@ export default {
         return
       }
       this.selected = form
-      const [members, departments, departmentRows] = await Promise.all([
+      const [members, departments, departmentRows, roster] = await Promise.all([
         api.members(form.formKey),
         api.departments(),
-        api.departmentMembers(form.formKey)
+        api.departmentMembers(form.formKey),
+        api.departmentRoster()
       ])
       this.memberRows = (members.data || []).map((m) => ({ ...m, rowType: 'member' }))
       this.departmentList = departments.data || []
-      this.departmentOptions = this.buildDepartmentTree(this.departmentList)
+      this.departmentRoster = roster.data || []
       this.departmentRows = (departmentRows.data || []).map((d) => ({
         ...d,
         rowType: 'department'
       }))
-      this.departmentKey = ''
-      this.memberId = ''
-      await this.searchUsers('')
+      this.comboText = ''
+      this.comboVisible = false
       this.membersVisible = true
     },
     async searchUsers(keyword) {
       this.candidates = (await api.users(keyword)).data
     },
-    addMember() {
-      const user = this.candidates.find((u) => u.id === this.memberId)
-      if (!user) return this.$message.warning('请选择人员')
-      if (this.memberRows.some((m) => m.userId === user.id)) return this.$message.info('该人员已在列表中')
-      this.memberRows.push({
-        userId: user.id,
-        name: user.name,
-        rowType: 'member',
-        canFill: false,
-        canHandle: false,
-        canManage: false
+    departmentLabel(department) {
+      const names = []
+      const seen = new Set()
+      let current = department
+      while (current && !seen.has(current.deptKey)) {
+        seen.add(current.deptKey)
+        names.unshift(current.name)
+        current = current.parentKey
+          ? this.departmentList.find((item) => item.deptKey === current.parentKey)
+          : null
+      }
+      return names.join(' / ')
+    },
+    isDepartmentAdded(department) {
+      return this.departmentRows.some((row) => row.deptKey === department.deptKey)
+    },
+    isMemberAdded(user) {
+      const id = user && user.userId !== undefined ? user.userId : user && user.id
+      return this.memberRows.some((row) => String(row.userId) === String(id))
+    },
+    openCombo() {
+      this.comboVisible = true
+      this.$nextTick(() => {
+        this.syncComboPanelWidth()
+        this.applyComboFilter(this.comboText)
+      })
+    },
+    closeCombo() {
+      this.comboVisible = false
+    },
+    syncComboPanelWidth() {
+      const input = this.$refs.comboInput
+      const width = input && input.$el ? input.$el.getBoundingClientRect().width : 0
+      if (width > 0) this.comboPanelWidth = Math.floor(width)
+    },
+    applyComboFilter(value) {
+      this.$nextTick(() => {
+        if (this.$refs.memberTree) this.$refs.memberTree.filter(String(value || ''))
+      })
+    },
+    filterComboNode(value, data) {
+      const query = String(value || '').trim()
+      if (!query) return true
+      const text = data.type === 'department' ? data.label + ' ' + data.name : data.name
+      return String(text || '').includes(query)
+    },
+    onComboOutside(event) {
+      if (!this.comboVisible) return
+      const input = this.$refs.comboInput && this.$refs.comboInput.$el
+      if (input && input.contains(event.target)) return
+      if (event.target.closest && event.target.closest('.member-tree-popper')) return
+      this.comboVisible = false
+    },
+    isComboAdded(data) {
+      if (!data || data.type === 'group') return false
+      return data.type === 'department' ? this.isDepartmentAdded(data) : this.isMemberAdded(data)
+    },
+    comboNodeTitle(data) {
+      return data.type === 'department' ? data.label : data.name
+    },
+    comboNodeHint(data) {
+      if (this.isComboAdded(data)) return '已添加'
+      if (data.type === 'department') return '含下级 ' + Number(data.memberCount || 0) + ' 人'
+      if (data.type === 'group') return data.children.length + ' 人'
+      return ''
+    },
+    comboCircleLabel(data) {
+      const label = (data.type === 'department' ? '部门 ' : '成员 ') + data.name
+      return this.isComboAdded(data) ? label + ' 已添加' : '添加' + label
+    },
+    addComboNode(data) {
+      if (!data || data.type === 'group') return
+      this.addComboOption({
+        type: data.type === 'department' ? 'department' : 'user',
+        key: data.type === 'department' ? data.deptKey : data.userId,
+        label: data.name
+      })
+    },
+    addComboOption(item) {
+      if (!item) return
+      if (item.type === 'department') {
+        const department = this.departmentList.find((d) => d.deptKey === item.key)
+        if (!department) return
+        if (this.isDepartmentAdded(department)) return this.$message.info('该部门已在列表中')
+        this.departmentRows.push({
+          deptKey: department.deptKey,
+          name: department.name,
+          memberCount: department.memberCount,
+          rowType: 'department',
+          canFill: false,
+          canHandle: false,
+          canManage: false
+        })
+      } else if (item.type === 'user') {
+        if (this.memberRows.some((row) => String(row.userId) === String(item.key)))
+          return this.$message.info('该人员已在列表中')
+        const roster = this.departmentRoster.find((row) => String(row.userId) === String(item.key))
+        this.memberRows.push({
+          userId: item.key,
+          name: item.label || (roster && roster.name) || item.key,
+          rowType: 'member',
+          canFill: false,
+          canHandle: false,
+          canManage: false
+        })
+      }
+      this.$nextTick(() => {
+        if (this.comboVisible && this.$refs.comboInput) this.$refs.comboInput.focus()
       })
     },
     grantRowKey(row) {
@@ -790,32 +1093,6 @@ export default {
         this.saving = false
       }
     },
-    addDepartment() {
-      const department = this.departmentList.find((d) => d.deptKey === this.departmentKey)
-      if (!department) return this.$message.warning('请选择部门')
-      if (this.departmentRows.some((d) => d.deptKey === department.deptKey))
-        return this.$message.info('该部门已在列表中')
-      this.departmentRows.push({
-        deptKey: department.deptKey,
-        name: department.name,
-        memberCount: department.memberCount,
-        rowType: 'department',
-        canFill: false,
-        canHandle: false,
-        canManage: false
-      })
-    },
-    buildDepartmentTree(list) {
-      const map = new Map()
-      list.forEach((department) => map.set(department.deptKey, { ...department, children: [] }))
-      const roots = []
-      map.forEach((department) => {
-        if (department.parentKey && map.has(department.parentKey))
-          map.get(department.parentKey).children.push(department)
-        else roots.push(department)
-      })
-      return roots
-    },
     openDepartmentImport() {
       this.departmentImportText = ''
       this.departmentImportVisible = true
@@ -837,16 +1114,18 @@ export default {
         this.departmentImportVisible = false
         this.departmentImportText = ''
         if (this.selected) {
-          const [departments, departmentRows] = await Promise.all([
+          const [departments, departmentRows, roster] = await Promise.all([
             api.departments(),
-            api.departmentMembers(this.selected.formKey)
+            api.departmentMembers(this.selected.formKey),
+            api.departmentRoster()
           ])
           this.departmentList = departments.data || []
-          this.departmentOptions = this.buildDepartmentTree(this.departmentList)
+          this.departmentRoster = roster.data || []
           this.departmentRows = (departmentRows.data || []).map((d) => ({
             ...d,
             rowType: 'department'
           }))
+          this.applyComboFilter(this.comboText)
         }
       } finally {
         this.departmentImportSaving = false
@@ -958,24 +1237,13 @@ export default {
 <style scoped>
 .admin-actions {
   display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
 }
-.admin-form-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
-  gap: 18px;
-}
-.admin-card-actions {
-  justify-content: flex-start;
-  flex-wrap: wrap;
-  gap: 14px;
-}
-.admin-card-actions .el-button {
-  margin: 0;
-}
-.admin-card-actions .danger-text {
-  color: #f56c6c;
+.admin-actions .el-button {
+  padding: 0 12px;
 }
 .danger-text {
   color: #f56c6c;
@@ -990,6 +1258,81 @@ export default {
   display: flex;
   gap: 12px;
   margin: 12px 0;
+}
+.member-combo {
+  margin: 12px 0 4px;
+}
+.member-combo ::v-deep .el-popover__reference-wrapper {
+  display: block;
+  width: 100%;
+}
+.member-combo-tip {
+  margin: 6px 0 12px;
+  font-size: 12px;
+}
+.member-tree-panel {
+  max-height: 320px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  text-align: left;
+}
+.member-tree ::v-deep .el-tree-node__content {
+  height: 34px;
+}
+.member-tree-row {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding-right: 4px;
+}
+.member-tree-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.member-tree-hint {
+  flex: 0 0 auto;
+  color: #8f959e;
+  font-size: 12px;
+}
+.member-tree-row.is-added .member-tree-name {
+  color: #c0c4cc;
+}
+.member-tree-row.is-group {
+  color: #8f959e;
+}
+.member-tree-row.is-group .member-tree-name {
+  font-weight: 600;
+}
+.member-tree-circle {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1.5px solid #c0c4cc;
+  border-radius: 50%;
+  background: #fff;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+.member-tree-circle:hover {
+  border-color: #3370ff;
+}
+.member-tree-circle.is-added {
+  border-color: #3370ff;
+  background: #3370ff;
+  cursor: default;
+}
+.member-tree-circle:disabled {
+  opacity: 1;
 }
 .member-bulk-bar {
   display: flex;
@@ -1066,8 +1409,10 @@ export default {
   margin-left: 0;
 }
 @media (max-width: 767px) {
-  .admin-form-list {
-    grid-template-columns: 1fr;
+  .admin-actions {
+    flex-wrap: wrap;
+    flex-shrink: 1;
+    width: 100%;
   }
   .admin-actions .el-button {
     margin: 0;

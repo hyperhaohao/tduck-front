@@ -1,7 +1,11 @@
 <template>
   <section class="demand-page" v-loading="loading">
-    <h1>{{ pending ? '待我处理' : '我的需求' }}</h1>
-    <p class="demand-subtitle">{{ subtitle }}</p>
+    <div class="demand-title-row">
+      <div>
+        <h1>{{ pending ? '待我处理' : '我的需求' }}</h1>
+        <p class="demand-subtitle">{{ subtitle }}</p>
+      </div>
+    </div>
     <el-radio-group v-if="pending" v-model="scope" size="small" @change="scopeChanged"
       ><el-radio-button label="pending">待我处理</el-radio-button
       ><el-radio-button label="table">获授权总表</el-radio-button></el-radio-group
@@ -71,13 +75,15 @@
         @selection-change="selectionChanged"
       >
         <el-table-column v-if="batchEnabled" type="selection" width="34" />
-        <el-table-column label="需求" min-width="120"
+        <el-table-column label="需求" :width="roomy ? 360 : null" min-width="120"
           ><template slot-scope="s"
             ><div class="request-title" :title="s.row.title">
               {{ s.row.title }} <el-tag v-if="!pending && s.row.unread" type="danger" size="mini">未读</el-tag>
               <el-tag v-if="s.row.publicationPublished" type="success" size="mini">已公示</el-tag>
+              <el-tag v-else-if="s.row.publicationArchived" type="info" size="mini">已归档</el-tag>
               <el-tag v-else-if="s.row.publicationSkipped" type="info" size="mini">不公示</el-tag>
               <el-tag v-else-if="pending && s.row.decision !== 'REJECTED' && s.row.progress !== 'COMPLETED'" type="warning" size="mini">待公示</el-tag>
+              <el-tag v-if="s.row.followupPending" type="warning" size="mini">追问</el-tag>
             </div>
             <small class="demand-muted request-meta" :title="meta(s.row)">{{ meta(s.row) }}</small></template
           ></el-table-column
@@ -102,24 +108,40 @@
           ><template slot-scope="s"
             ><el-button type="text" @click.stop="open(s.row)">查看</el-button></template
           ></el-table-column
-        >
+        ><el-table-column v-if="roomy" />
       </el-table>
       <div class="demand-list-mobile">
-        <article v-for="row in rows" :key="row.id" class="demand-card" @click="open(row)">
-          <h3>{{ row.title }} <el-tag v-if="!pending && row.unread" type="danger" size="mini">未读</el-tag></h3>
-          <small class="demand-muted">{{ row.requestNo }}</small>
-          <p>{{ plain(row.formName) }} · {{ row.handlerName || '待分派' }}</p>
-          <p class="demand-muted request-time">
-            提报 {{ date(row.createTime) }}<span v-if="row.replyTime"> · 回复 {{ date(row.replyTime) }}</span>
-          </p>
-          <div class="demand-card-footer">
-            <div class="demand-tags">
+        <article
+          v-for="row in rows"
+          :key="row.id"
+          class="demand-card demand-card-compact demand-card-clickable"
+          @click="open(row)"
+        >
+          <div class="demand-card-body">
+            <div class="demand-card-title-row">
+              <h3 class="demand-card-title">{{ row.title }}</h3>
+              <el-tag v-if="!pending && row.unread" type="danger" size="mini">未读</el-tag>
+            </div>
+            <p class="demand-card-kicker">{{ row.requestNo }}</p>
+            <p class="demand-card-line">{{ plain(row.formName) }} · {{ row.handlerName || '待分派' }}</p>
+            <p class="demand-card-time">
+              提报 {{ date(row.createTime) }}<span v-if="row.replyTime"> · 回复 {{ date(row.replyTime) }}</span>
+            </p>
+            <div class="demand-tags demand-card-tags">
               <el-tag :type="tag(row.decision)" size="small">{{ decisions[row.decision] }}</el-tag
               ><el-tag v-if="row.progress !== 'NONE'" type="info" size="small">{{ progresses[row.progress] }}</el-tag
               ><el-tag v-if="row.publicationPublished" type="success" size="small">已公示</el-tag
-              ><el-tag v-else-if="row.publicationSkipped" type="info" size="small">不公示</el-tag>
+              ><el-tag v-else-if="row.publicationArchived" type="info" size="small">已归档</el-tag
+              ><el-tag v-else-if="row.publicationSkipped" type="info" size="small">不公示</el-tag
+              ><el-tag v-if="row.followupPending" type="warning" size="small">追问</el-tag>
             </div>
-            <el-button type="text" @click.stop="open(row)">查看</el-button>
+          </div>
+          <div class="demand-card-actions">
+            <div class="demand-card-actions-main">
+              <el-button size="mini" class="demand-card-action is-primary" @click.stop="open(row)"
+                >查看</el-button
+              >
+            </div>
           </div>
         </article>
         <el-empty v-if="!rows.length && !loading" description="暂无需求" />
@@ -235,6 +257,7 @@ export default {
       query: { keyword: '', decision: '', progress: '', formKey: '', handlerId: '', page: 1, size: 20 },
       mobile: window.innerWidth < 768,
       wide: window.innerWidth >= 1200,
+      roomy: window.innerWidth >= 1440,
       selectedRows: [],
       batchBusy: false,
       batchAssignVisible: false,
@@ -293,6 +316,7 @@ export default {
     resize() {
       this.mobile = window.innerWidth < 768
       this.wide = window.innerWidth >= 1200
+      this.roomy = window.innerWidth >= 1440
     },
     async loadView() {
       if (this.selectedFormKey) await this.load()

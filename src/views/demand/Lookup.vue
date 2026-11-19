@@ -1,7 +1,11 @@
 <template>
   <section class="demand-page">
-    <h1>匿名需求查询</h1>
-    <p class="demand-subtitle">使用提交成功时领取的需求编号和查询码，查看本项需求的回复与进度。</p>
+    <div class="demand-title-row">
+      <div>
+        <h1>匿名需求查询</h1>
+        <p class="demand-subtitle">使用提交成功时领取的需求编号和查询码，查看本项需求的回复与进度。</p>
+      </div>
+    </div>
     <el-form class="lookup-form" label-position="top" @submit.native.prevent="search"
       ><el-form-item label="需求编号"
         ><el-input v-model="form.requestNo" placeholder="请输入需求编号" autocomplete="off" /></el-form-item

@@ -179,6 +179,12 @@ export default {
   name: 'ConfigForm',
   components: { SystemInfoConfig, OssConfig, DeepSeekConfig },
   mixins: [ConfigMixin],
+  created() {
+    const tab = this.$route.query.tab
+    if (['systemInfoConfig', 'fileEnvConfig', 'deepSeekEnvConfig'].includes(tab)) {
+      this.activeName = tab
+    }
+  },
   methods: {
     handleTabClick() {
       if (!['systemInfoConfig', 'fileEnvConfig', 'deepSeekEnvConfig'].includes(this.activeName)) {

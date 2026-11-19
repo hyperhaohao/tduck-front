@@ -5,11 +5,22 @@
         <div class="back-btn" @click="$router.back(-1)" title="返回">
           <i class="el-icon-back" />
         </div>
-        <div class="logo-wrapper" @click="$router.push({ path: '/home' })">
+        <div class="logo-wrapper" @click="goHome">
           <BrandLogo />
         </div>
       </div>
       <div class="header-right">
+        <el-button
+          v-if="canUseAi"
+          round
+          class="action-btn ai-collab-btn"
+          type="primary"
+          plain
+          icon="el-icon-magic-stick"
+          @click="aiDrawerVisible = true"
+        >
+          AI 协作
+        </el-button>
         <el-button
           round
           class="action-btn"
@@ -21,6 +32,7 @@
           预览
         </el-button>
         <el-button
+          v-if="isGlobal"
           round
           class="action-btn"
           type="primary"
@@ -36,7 +48,7 @@
       <aside class="form-editor-sidebar">
         <div class="custom-el-menu">
           <div
-            v-for="menuItem in menuItemList"
+            v-for="menuItem in visibleMenuItems"
             :key="menuItem.route"
             class="el-menu-item"
             :class="{ 'is-active': defaultActiveMenu === menuItem.route }"
@@ -49,8 +61,14 @@
       </aside>
 
       <main class="form-editor-content">
-        <router-view />
+        <router-view :key="editorKey" />
       </main>
+
+      <designer-chat
+        :form-key="projectKey"
+        :visible.sync="aiDrawerVisible"
+        @applied="handleAiApplied"
+      />
     </div>
 
     <el-dialog
@@ -69,14 +87,18 @@
 <script>
 import PreView from '@/views/form/preview'
 import TemplateCreate from '@/views/project/template/create'
+import DesignerChat from '@/views/ai/form/DesignerChat.vue'
+import { demandState } from '@/utils/demand'
 
 export default {
   name: 'NewIndex',
-  components: { TemplateCreate, PreView },
+  components: { TemplateCreate, PreView, DesignerChat },
   data() {
     return {
       previewKey: +new Date(),
       previewDialogVisible: false,
+      aiDrawerVisible: false,
+      editorKey: 0,
       defaultActiveMenu: 'editor',
       projectKey: null,
       menuItemList: [
@@ -118,11 +140,42 @@ export default {
       ]
     }
   },
+  computed: {
+    isGlobal() {
+      return !demandState.enabled || demandState.global
+    },
+    canUseAi() {
+      return !demandState.enabled || demandState.admin
+    },
+    visibleMenuItems() {
+      if (this.isGlobal) return this.menuItemList
+      return this.menuItemList.filter(
+        (item) => !['/project/form/data', '/project/form/statistics'].includes(item.route)
+      )
+    }
+  },
   created() {
     this.projectKey = this.$route.query.key
     this.defaultActiveMenu = this.$route.path
+    if (this.$route.query.ai === '1') {
+      this.$nextTick(() => {
+        this.aiDrawerVisible = true
+      })
+    }
   },
   methods: {
+    goHome() {
+      this.$router.push({
+        path: demandState.enabled && !demandState.global ? '/demand/admin' : '/home'
+      })
+    },
+    handleAiApplied() {
+      this.editorKey += 1
+      if (this.$route.path !== '/project/form/editor') {
+        this.defaultActiveMenu = '/project/form/editor'
+        this.$router.replace({ path: '/project/form/editor', query: { key: this.projectKey } })
+      }
+    },
     menuSelectHandle(index) {
       this.defaultActiveMenu = index
       this.$router.replace({ path: index, query: { key: this.projectKey } })
@@ -354,6 +407,7 @@ export default {
 
 .form-editor-content {
   flex: 1;
+  min-width: 0;
   overflow: hidden;
   position: relative;
   background-color: #f7f8fa;

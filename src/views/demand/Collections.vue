@@ -18,27 +18,73 @@
       ><el-button type="text" @click="load">重新加载</el-button></el-alert
     >
     <div class="demand-toolbar">
-      <el-input
-        v-model="keyword"
-        placeholder="搜索需求收集单"
-        clearable
-        prefix-icon="el-icon-search"
-        aria-label="搜索需求收集单"
-      />
+      <div class="demand-pill-group" role="group" aria-label="按状态筛选收集单">
+        <button
+          v-for="item in statusOptions"
+          :key="item.value"
+          type="button"
+          class="demand-pill"
+          :class="{ 'is-active': statusFilter === item.value }"
+          @click="statusFilter = item.value"
+        >
+          <span class="demand-pill-dot" :style="{ backgroundColor: item.color }" />{{ item.label }}
+        </button>
+      </div>
+      <div class="demand-toolbar-end">
+        <el-input
+          v-model="keyword"
+          placeholder="搜索需求收集单"
+          clearable
+          prefix-icon="el-icon-search"
+          aria-label="搜索需求收集单"
+        />
+      </div>
     </div>
-    <div class="collection-grid">
-      <article v-for="form in filtered" :key="form.formKey" class="demand-card collection-card">
-        <div class="collection-label">
-          <el-tag :type="expired(form) ? 'info' : 'success'" size="small">{{
-            expired(form) ? '已截止' : '收集中'
-          }}</el-tag
-          ><span v-if="form.allowAnonymous" class="demand-muted">可匿名</span>
+    <div class="collection-grid demand-card-grid">
+      <article
+        v-for="form in filtered"
+        :key="form.formKey"
+        class="demand-card demand-card-full"
+        :class="{ 'is-ended': expired(form) }"
+      >
+        <demand-card-cover label="需求收集" />
+        <div class="demand-card-body">
+          <div class="demand-card-title-row">
+            <h3
+              class="demand-card-title"
+              :class="{ 'is-clickable': !expired(form) }"
+              :title="plain(form.name)"
+              @click="openForm(form)"
+            >
+              {{ plain(form.name) }}
+            </h3>
+          </div>
+          <p class="demand-card-desc" :title="form.summary || plain(form.description)">
+            {{ form.summary || plain(form.description) || '欢迎提交你的需求和建议。' }}
+          </p>
+          <div class="demand-card-meta">
+            <span class="demand-card-status" :class="expired(form) ? 'is-ended' : 'is-live'">
+              <span class="demand-card-status-dot" aria-hidden="true" />
+              <span>{{ expired(form) ? '已截止' : '收集中' }}</span>
+            </span>
+            <span class="demand-card-meta-end">{{
+              form.endTime ? '截止：' + date(form.endTime) : '长期有效'
+            }}</span>
+          </div>
+          <div class="demand-tags demand-card-tags">
+            <el-tag v-if="form.allowAnonymous" size="small" type="info">可匿名</el-tag>
+          </div>
         </div>
-        <h3>{{ plain(form.name) }}</h3>
-        <p>{{ form.summary || plain(form.description) || '欢迎提交你的需求和建议。' }}</p>
-        <div class="demand-card-footer">
-          <span class="demand-muted">{{ form.endTime ? '截止：' + date(form.endTime) : '长期有效' }}</span
-          ><el-button type="primary" :disabled="expired(form)" @click="write(form)">填写</el-button>
+        <div class="demand-card-actions">
+          <div class="demand-card-actions-main">
+            <el-button
+              size="mini"
+              class="demand-card-action is-primary"
+              :disabled="expired(form)"
+              @click="write(form)"
+              >填写</el-button
+            >
+          </div>
         </div>
       </article>
     </div>
@@ -70,10 +116,26 @@
 <script>
 import { listForms, listRequests } from '@/api/demand'
 import { decisions, progresses } from '@/utils/demand'
+import DemandCardCover from './components/DemandCardCover'
 export default {
   name: 'DemandCollections',
+  components: { DemandCardCover },
   data() {
-    return { forms: [], recent: [], keyword: '', loading: false, error: '', decisions, progresses }
+    return {
+      forms: [],
+      recent: [],
+      keyword: '',
+      statusFilter: '',
+      statusOptions: [
+        { value: '', label: '全部', color: '#3370ff' },
+        { value: 'live', label: '收集中', color: '#409eff' },
+        { value: 'ended', label: '已截止', color: '#f56c6c' }
+      ],
+      loading: false,
+      error: '',
+      decisions,
+      progresses
+    }
   },
   computed: {
     logged() {
@@ -83,9 +145,14 @@ export default {
       return this.$route.path.endsWith('/home')
     },
     filtered() {
-      return this.forms.filter(
-        (f) => this.plain(f.name).includes(this.keyword) || (f.summary || '').includes(this.keyword)
-      )
+      return this.forms.filter((form) => {
+        const keywordMatch =
+          this.plain(form.name).includes(this.keyword) ||
+          (form.summary || '').includes(this.keyword)
+        const statusMatch =
+          !this.statusFilter || (this.statusFilter === 'ended' ? this.expired(form) : !this.expired(form))
+        return keywordMatch && statusMatch
+      })
     }
   },
   created() {
@@ -119,30 +186,15 @@ export default {
     },
     write(form) {
       this.$router.push(`/s/${form.formKey}`)
+    },
+    openForm(form) {
+      if (this.expired(form)) return
+      this.write(form)
     }
   }
 }
 </script>
 <style scoped>
-.collection-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 20px;
-}
-.collection-card {
-  display: flex;
-  flex-direction: column;
-}
-.collection-label {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 18px;
-}
-.collection-card p {
-  flex: 1;
-  margin: 0;
-  overflow-wrap: anywhere;
-}
 .recent-section {
   margin-top: 36px;
 }
@@ -166,10 +218,6 @@ export default {
   overflow-wrap: anywhere;
 }
 @media (max-width: 767px) {
-  .collection-grid {
-    grid-template-columns: 1fr;
-    gap: 14px;
-  }
   .recent-item {
     flex-direction: column;
   }

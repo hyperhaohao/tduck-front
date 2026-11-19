@@ -51,8 +51,7 @@ router.beforeEach(async (to, from, next) => {
     to.path
   )
   const formDataPath = /^\/project\/form\/(data|statistics)(\/|$)/.test(to.path)
-  const consolePath =
-    /^\/project\/(my|form)(\/|$)/.test(to.path) && !formDataPath && !publicProject
+  const consolePath = /^\/project\/form(\/|$)/.test(to.path) && !formDataPath && !publicProject
   const globalPath =
     /^\/(home|manage)(\/|$)/.test(to.path) ||
     (/^\/project\//.test(to.path) && !publicProject && !consolePath)

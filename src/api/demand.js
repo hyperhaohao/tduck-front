@@ -10,13 +10,19 @@ export const lookup = (data) => request.post('/demand-api/lookup', data, { skipA
 export const assign = (id, data, config) => request.post(`/demand-api/requests/${id}/assign`, data, config)
 export const outcome = (id, data, config) => request.post(`/demand-api/requests/${id}/outcome`, data, config)
 export const message = (id, data, config) => request.post(`/demand-api/requests/${id}/messages`, data, config)
+export const followUp = (id, data, config) => request.post(`/demand-api/requests/${id}/followup`, data, config)
 export const markRead = (data) => request.post('/demand-api/read', data)
-export const publications = () => request.get('/demand-api/publications')
+export const publications = (includeArchived) =>
+  request.get('/demand-api/publications', { params: { includeArchived: includeArchived ? 1 : 0 } })
 export const publicationDetail = (id) => request.get(`/demand-api/publications/${id}`)
 export const publish = (id, data, config) =>
   request.post(`/demand-api/requests/${id}/publication`, data, config)
 export const skipPublication = (id, data, config) =>
   request.post(`/demand-api/requests/${id}/publication/skip`, data, config)
+export const archivePublication = (id, data, config) =>
+  request.post(`/demand-api/publications/${id}/archive`, data, config)
+export const deletePublication = (id, data, config) =>
+  request.post(`/demand-api/publications/${id}/delete`, data, config)
 export const autoPublish = (id, data, config) =>
   request.post(`/demand-api/requests/${id}/publication/auto`, data, config)
 export const handlers = (key) => request.get(`/demand-api/forms/${encodeURIComponent(key)}/handlers`)
@@ -48,6 +54,24 @@ export const members = (key) => request.get(`/demand-api/admin/forms/${key}/memb
 export const saveMember = (key, id, data) => request.post(`/demand-api/admin/forms/${key}/members/${id}`, data)
 export const removeMember = (key, id) => request.delete(`/demand-api/admin/forms/${key}/members/${id}`)
 export const departments = () => request.get('/demand-api/admin/departments')
+export const departmentRoster = () => request.get('/demand-api/admin/departments/members')
+export const createDepartment = (data) => request.post('/demand-api/admin/departments', data)
+export const updateDepartment = (deptKey, data) =>
+  request.put(`/demand-api/admin/departments/${encodeURIComponent(deptKey)}`, data)
+export const removeDepartment = (deptKey) =>
+  request.delete(`/demand-api/admin/departments/${encodeURIComponent(deptKey)}`)
+export const addOrgMember = (deptKey, userId) =>
+  request.post(
+    `/demand-api/admin/departments/${encodeURIComponent(deptKey)}/members/${encodeURIComponent(userId)}`
+  )
+export const removeOrgMember = (deptKey, userId) =>
+  request.delete(
+    `/demand-api/admin/departments/${encodeURIComponent(deptKey)}/members/${encodeURIComponent(userId)}`
+  )
+export const setUserDepartments = (userId, deptKeys) =>
+  request.put(`/demand-api/admin/users/${encodeURIComponent(userId)}/departments`, { deptKeys })
+export const ensureDepartmentField = (key) =>
+  request.post(`/demand-api/admin/forms/${encodeURIComponent(key)}/dept-field`)
 export const departmentMembers = (key) => request.get(`/demand-api/admin/forms/${key}/department-members`)
 export const saveDepartmentMember = (key, deptKey, data) =>
   request.post(`/demand-api/admin/forms/${key}/department-members/${encodeURIComponent(deptKey)}`, data)

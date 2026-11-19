@@ -38,7 +38,13 @@
         </section>
         <el-tabs v-model="tab"
           ><el-tab-pane label="回复与进度" name="replies"
-            ><div v-if="detail.reason" class="outcome-summary">
+            ><el-alert
+              v-if="staff && detail.followupPending"
+              class="followup-notice"
+              title="填报者已追问，请发布正式回复"
+              type="warning"
+              :closable="false"
+            /><div v-if="detail.reason" class="outcome-summary">
               <strong>采纳说明</strong>
               <p class="demand-preline">{{ detail.reason }}</p>
               <template v-if="detail.completion"
@@ -53,7 +59,9 @@
                 :timestamp="date(item.createTime)"
                 placement="top"
                 ><div class="message-author">
-                  {{ item.authorName }} <el-tag v-if="item.kind === 'EVENT'" size="mini" type="info">进度更新</el-tag>
+                  {{ item.authorName }}
+                  <el-tag v-if="item.kind === 'EVENT'" size="mini" type="info">进度更新</el-tag>
+                  <el-tag v-else-if="item.kind === 'FOLLOWUP'" size="mini" type="warning">填报者追问</el-tag>
                 </div>
                 <p class="demand-preline">{{ item.content }}</p></el-timeline-item
               ></el-timeline
@@ -64,14 +72,44 @@
             <article v-for="item in notes" :key="item.id" class="internal-message">
               <small>{{ item.authorName }} · {{ date(item.createTime) }}</small>
               <p class="demand-preline">{{ item.content }}</p>
-            </article></el-tab-pane
+            </article>
+            <p v-if="!notes.length" class="demand-muted">
+              暂无内部备注。内部备注仅管理人员可见，不会展示给填报者。
+            </p></el-tab-pane
           ><el-tab-pane v-if="staff" label="操作记录" name="audit"
             ><article v-for="item in audits" :key="item.id" class="internal-message">
               <small>{{ item.authorName }} · {{ date(item.createTime) }}</small>
               <p class="demand-preline">{{ item.content }}</p>
-            </article></el-tab-pane
+            </article>
+            <p v-if="!audits.length" class="demand-muted">
+              暂无操作记录。分派经办人、发布/撤回/归档/删除公示等管理操作会记录在这里；处理结果更新和正式回复在「回复与进度」中展示。
+            </p></el-tab-pane
           ></el-tabs
         >
+        <section v-if="detail.canFollowUp" class="detail-section">
+          <h3>追问经办人</h3>
+          <p class="demand-muted">
+            提交后会回到经办人的待我处理，经办人回复后可在「回复与进度」查看。
+          </p>
+          <el-input
+            v-model="followupText"
+            type="textarea"
+            :rows="4"
+            maxlength="10000"
+            show-word-limit
+            placeholder="补充说明或追问内容"
+          />
+          <div class="detail-actions">
+            <el-button type="primary" :loading="saving" @click="submitFollowUp">提交追问</el-button>
+          </div>
+          <el-alert
+            v-if="detail.followupPending"
+            class="followup-waiting"
+            title="已提交追问，等待经办人回复。"
+            type="warning"
+            :closable="false"
+          />
+        </section>
         <section v-if="detail.canAssign" class="detail-section">
           <h3>经办分派</h3>
           <div class="assign-controls">
@@ -81,7 +119,10 @@
                 :key="member.userId"
                 :label="member.name"
                 :value="member.userId" /></el-select
-            ><el-button :loading="saving" @click="saveAssign">保存分派</el-button>
+            >
+          </div>
+          <div class="detail-actions">
+            <el-button :loading="saving" @click="saveAssign">保存分派</el-button>
           </div>
         </section>
         <section v-if="detail.canHandle" class="detail-section">
@@ -115,11 +156,16 @@
                 :rows="3"
                 maxlength="10000"
                 show-word-limit /></el-form-item
-            ><el-button type="primary" :loading="saving" @click="saveOutcome">发布处理结果</el-button></el-form
+            ><div class="detail-actions">
+              <el-button type="primary" :loading="saving" @click="saveOutcome">发布处理结果</el-button>
+            </div></el-form
           >
         </section>
-        <section v-if="detail.canHandle" class="detail-section">
+        <section v-if="detail.canHandle && tab !== 'audit'" class="detail-section">
           <h3>{{ tab === 'notes' ? '添加内部备注' : '回复填报者' }}</h3>
+          <p v-if="tab !== 'notes'" class="demand-muted">
+            正式回复发布后填报者可在「我的需求」查看；填报者追问会回到待我处理。
+          </p>
           <el-input
             v-model="replyText"
             type="textarea"
@@ -128,7 +174,7 @@
             show-word-limit
             :placeholder="tab === 'notes' ? '仅管理人员可见' : '发布后填报者即可查看'"
           />
-          <div class="reply-actions">
+          <div class="detail-actions">
             <el-button v-if="tab !== 'notes'" :loading="saving" @click="saveReply('DRAFT')">保存草稿</el-button
             ><el-button type="primary" :loading="saving" @click="saveReply(tab === 'notes' ? 'NOTE' : 'REPLY')">{{
               tab === 'notes' ? '保存内部备注' : '发布回复'
@@ -143,6 +189,12 @@
             type="info"
             :closable="false"
           />
+          <el-alert
+            v-if="detail.publication && detail.publication.archived"
+            title="该公示已归档，员工端不再展示；重新发布后恢复。"
+            type="info"
+            :closable="false"
+          />
           <p class="demand-muted">仅发布下列审核内容；不自动公开原始需求、附件和内部备注。</p>
           <el-form label-position="top"
             ><el-form-item label="公示标题"><el-input v-model="publication.title" maxlength="200" /></el-form-item
@@ -150,24 +202,25 @@
               ><el-input v-model="publication.summary" type="textarea" :rows="3" maxlength="2000" /></el-form-item
             ><el-form-item label="正式说明与进展"
               ><el-input v-model="publication.content" type="textarea" :rows="5" maxlength="20000" /></el-form-item
-            ><el-button type="primary" :loading="saving" @click="savePublication(true)">{{
-              publicationPublished
-                ? '审核并更新公示'
-                : detail.publicationSkipped
-                ? '重新发布公示'
-                : '审核并发布公示'
-            }}</el-button
-            ><el-button
-              v-if="publicationPublished"
-              :loading="saving"
-              @click="savePublication(false)"
-              >撤回公示</el-button
-            ><el-button
-              v-else-if="!detail.publicationSkipped"
-              :loading="saving"
-              @click="skipAction"
-              >不公示</el-button
-            ></el-form
+            ><div class="detail-actions">
+              <el-button
+                v-if="publicationPublished"
+                :loading="saving"
+                @click="savePublication(false)"
+                >撤回公示</el-button
+              ><el-button
+                v-else-if="!detail.publicationSkipped"
+                :loading="saving"
+                @click="skipAction"
+                >不公示</el-button
+              ><el-button type="primary" :loading="saving" @click="savePublication(true)">{{
+                publicationPublished
+                  ? '审核并更新公示'
+                  : detail.publicationSkipped
+                  ? '重新发布公示'
+                  : '审核并发布公示'
+              }}</el-button>
+            </div></el-form
           >
         </section>
       </template>
@@ -182,6 +235,7 @@ import {
   assign,
   outcome,
   message,
+  followUp,
   markRead,
   publish,
   skipPublication,
@@ -204,6 +258,7 @@ export default {
       handlers: [],
       handlerId: '',
       replyText: '',
+      followupText: '',
       result: {},
       publication: {},
       decisions,
@@ -219,7 +274,7 @@ export default {
       return !!(this.detail && this.detail.publication && this.detail.publication.published)
     },
     replies() {
-      return this.detail.messages.filter((m) => ['REPLY', 'EVENT'].includes(m.kind))
+      return this.detail.messages.filter((m) => ['REPLY', 'EVENT', 'FOLLOWUP'].includes(m.kind))
     },
     notes() {
       return this.detail.messages.filter((m) => m.kind === 'NOTE')
@@ -229,17 +284,39 @@ export default {
     },
     displayFields() {
       const data = this.detail.originalData || {}
-      const labels = {}
-      ;(this.detail.formFields || []).forEach((f) => {
-        labels[f.value] = f.label
+      const fields = this.detail.formFields || []
+      const used = new Set()
+      const rows = []
+      fields.forEach((field) => {
+        const valueKey = String(field.value || '')
+        if (!valueKey) return
+        const baseKey = valueKey.endsWith('label') ? valueKey.slice(0, -5) : valueKey
+        const dataKey = valueKey in data ? valueKey : baseKey in data ? baseKey : ''
+        if (!dataKey) return
+        used.add(valueKey)
+        used.add(baseKey)
+        rows.push({
+          key: dataKey,
+          label: field.label || dataKey,
+          files: this.findFiles(data[dataKey]),
+          text: this.display(data[dataKey]),
+          department: this.isDepartmentField(field, dataKey)
+        })
       })
-      return Object.keys(data).map((key) => ({
-        key,
-        label: labels[key] || key,
-        files: this.findFiles(data[key]),
-        text: this.display(data[key])
-      }))
-    }
+      Object.keys(data).forEach((key) => {
+        if (used.has(key)) return
+        // 选择类字段原始值是内部选项 ID，已有 xxxlabel 显示值时不再单独成行。
+        if ((key + 'label') in data) return
+        rows.push({
+          key,
+          label: key,
+          files: this.findFiles(data[key]),
+          text: this.display(data[key]),
+          department: key === 'demandDept' || key === 'demandDeptlabel'
+        })
+      })
+      return rows.filter((row) => row.department).concat(rows.filter((row) => !row.department))
+    },
   },
   mounted() {
     window.addEventListener('resize', this.resize)
@@ -251,11 +328,22 @@ export default {
     resize() {
       this.mobile = window.innerWidth < 768
     },
+    isDepartmentField(field, dataKey) {
+      const scheme = field.scheme && typeof field.scheme === 'object' ? field.scheme : {}
+      const config = scheme.config && typeof scheme.config === 'object' ? scheme.config : {}
+      return (
+        config.demandDept === true ||
+        config.demandDept === 'true' ||
+        dataKey === 'demandDept' ||
+        dataKey === 'demandDeptlabel'
+      )
+    },
     async open(id, receipt) {
       this.id = id
       this.anonymousReceipt = receipt || null
       this.detail = null
       this.tab = 'replies'
+      this.followupText = ''
       this.visible = true
       await this.reload()
     },
@@ -330,6 +418,14 @@ export default {
         () => message(this.id, { kind, content: this.replyText }),
         kind === 'DRAFT' ? '草稿已保存' : kind === 'NOTE' ? '内部备注已保存' : '回复已发布'
       )
+    },
+    submitFollowUp() {
+      if (!this.followupText.trim()) return this.$message.warning('请填写追问内容')
+      const content = this.followupText
+      return this.run(async () => {
+        await followUp(this.id, { content })
+        this.followupText = ''
+      }, '追问已提交')
     },
     async savePublication(published) {
       if (published && !(this.detail.messages || []).some((m) => m.kind === 'REPLY'))
@@ -429,15 +525,29 @@ export default {
   font-size: 17px;
   margin: 0 0 18px;
 }
-.assign-controls,
-.reply-actions {
+.assign-controls {
   display: flex;
-  gap: 12px;
   flex-wrap: wrap;
 }
-.reply-actions {
+.assign-controls .el-select {
+  width: 100%;
+}
+.detail-actions {
+  display: flex;
+  align-items: center;
   justify-content: flex-end;
-  margin-top: 16px;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.detail-actions .el-button + .el-button {
+  margin-left: 0;
+}
+.followup-notice {
+  margin-bottom: 16px;
+}
+.followup-waiting {
+  margin-top: 12px;
 }
 .internal-message {
   padding: 16px 0;

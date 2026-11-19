@@ -49,3 +49,9 @@ export const getUserThemeRequest = (projectKey) => getRequest(`/user/form/theme/
 
 // 批量创建项目表单项
 export const batchCreateProjectItem = (data) => postRequest('/user/form/item/batch/create', data)
+// 更新表单项
+export const updateProjectItem = (data) => postRequest('/user/form/item/update', data)
+// 删除表单项
+export const deleteProjectItem = (data) => postRequest('/user/form/item/delete', data)
+// 表单项排序
+export const sortProjectItem = (data) => postRequest('/user/form/item/sort', data)
