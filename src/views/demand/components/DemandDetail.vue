@@ -193,7 +193,9 @@
             type="info"
             :closable="false"
           />
-          <p class="demand-muted">仅发布下列审核内容；不自动公开原始需求、附件和内部备注。</p>
+          <p class="demand-muted">
+            仅发布下列审核内容；不自动公开原始需求、附件和内部备注。摘要已根据采纳/完成说明预填，正文已根据最近一次正式回复预填，可修改后再发布。
+          </p>
           <el-form label-position="top"
             ><el-form-item label="公示标题"><el-input v-model="publication.title" maxlength="200" /></el-form-item
             ><el-form-item label="需求摘要"
@@ -371,10 +373,20 @@ export default {
           completion: this.detail.completion || '',
           revision: this.detail.revision
         }
+        const latestReply = (this.detail.messages || [])
+          .filter((m) => m.kind === 'REPLY')
+          .sort(
+            (a, b) =>
+              String(a.createTime).localeCompare(String(b.createTime)) ||
+              String(a.id).localeCompare(String(b.id))
+          )
+          .pop()
+        const fallback = this.detail.reason || this.detail.completion || ''
+        const replyText = latestReply ? latestReply.content : ''
         this.publication = {
           title: this.detail.title,
-          summary: '',
-          content: '',
+          summary: (fallback || replyText).slice(0, 2000),
+          content: (replyText || fallback).slice(0, 20000),
           version: 0,
           ...(this.detail.publication || {})
         }

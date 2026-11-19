@@ -907,6 +907,16 @@ test('detail feed explains empty state and exposes note composer', async ({ page
   await expect(drawer.getByRole('button', { name: '发布回复', exact: true })).toBeVisible()
 })
 
+test('publication form prefills from outcome and latest reply', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 }); await login(page); await mockApi(page)
+  await page.goto('/demand/pending'); await page.getByRole('button', { name: '进入信息化需求征集' }).click(); await page.getByRole('button', { name: '查看', exact: true }).first().click()
+  const drawer = page.locator('.demand-detail-drawer')
+  const field = (label) => drawer.locator('.el-form-item').filter({ hasText: label }).locator('textarea')
+  await expect(field('需求摘要')).toHaveValue('采纳，已安排实施。')
+  await expect(field('正式说明与进展')).toHaveValue('已完成初步评估，目前正在实施。')
+  await expect(drawer.locator('.el-form-item').filter({ hasText: '公示标题' }).locator('input')).toHaveValue('优化设备维护记录查询')
+})
+
 test('detail action rows align right without overflow at 1024 and 320', async ({ page }) => {
   const measure = (drawer) => drawer.locator('.detail-actions').evaluateAll((els) => els.map((el) => {
     const box = el.getBoundingClientRect()
