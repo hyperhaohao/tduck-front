@@ -36,56 +36,43 @@
             </div>
           </div>
         </section>
-        <el-tabs v-model="tab"
-          ><el-tab-pane label="回复与进度" name="replies"
-            ><el-alert
-              v-if="staff && detail.followupPending"
-              class="followup-notice"
-              title="填报者已追问，请发布正式回复"
-              type="warning"
-              :closable="false"
-            /><div v-if="detail.reason" class="outcome-summary">
-              <strong>采纳说明</strong>
-              <p class="demand-preline">{{ detail.reason }}</p>
-              <template v-if="detail.completion"
-                ><strong>完成说明</strong>
-                <p class="demand-preline">{{ detail.completion }}</p></template
-              >
-            </div>
-            <el-timeline
-              ><el-timeline-item
-                v-for="item in replies"
-                :key="item.id"
-                :timestamp="date(item.createTime)"
-                placement="top"
-                ><div class="message-author">
-                  {{ item.authorName }}
-                  <el-tag v-if="item.kind === 'EVENT'" size="mini" type="info">进度更新</el-tag>
-                  <el-tag v-else-if="item.kind === 'FOLLOWUP'" size="mini" type="warning">填报者追问</el-tag>
-                </div>
-                <p class="demand-preline">{{ item.content }}</p></el-timeline-item
-              ></el-timeline
+        <section class="detail-feed">
+          <el-alert
+            v-if="staff && detail.followupPending"
+            class="followup-notice"
+            title="填报者已追问，请发布正式回复"
+            type="warning"
+            :closable="false"
+          />
+          <div v-if="detail.reason" class="outcome-summary">
+            <strong>采纳说明</strong>
+            <p class="demand-preline">{{ detail.reason }}</p>
+            <template v-if="detail.completion"
+              ><strong>完成说明</strong>
+              <p class="demand-preline">{{ detail.completion }}</p></template
             >
-            <p v-if="!replies.length" class="demand-muted">暂无正式回复，处理后将在这里展示。</p></el-tab-pane
-          ><el-tab-pane v-if="staff" label="内部备注" name="notes"
-            ><el-alert title="仅管理人员可见，不展示给填报者及公示读者。" type="info" :closable="false" />
-            <article v-for="item in notes" :key="item.id" class="internal-message">
-              <small>{{ item.authorName }} · {{ date(item.createTime) }}</small>
-              <p class="demand-preline">{{ item.content }}</p>
-            </article>
-            <p v-if="!notes.length" class="demand-muted">
-              暂无内部备注。内部备注仅管理人员可见，不会展示给填报者。
-            </p></el-tab-pane
-          ><el-tab-pane v-if="staff" label="操作记录" name="audit"
-            ><article v-for="item in audits" :key="item.id" class="internal-message">
-              <small>{{ item.authorName }} · {{ date(item.createTime) }}</small>
-              <p class="demand-preline">{{ item.content }}</p>
-            </article>
-            <p v-if="!audits.length" class="demand-muted">
-              暂无操作记录。分派经办人、发布/撤回/归档/删除公示等管理操作会记录在这里；处理结果更新和正式回复在「回复与进度」中展示。
-            </p></el-tab-pane
-          ></el-tabs
-        >
+          </div>
+          <el-timeline>
+            <el-timeline-item
+              v-for="item in feed"
+              :key="item.id"
+              :timestamp="date(item.createTime)"
+              placement="top"
+            >
+              <div :class="['feed-item', { 'is-internal': kindMeta(item.kind).internal }]">
+                <div class="message-author">
+                  {{ item.authorName }}
+                  <el-tag size="mini" :type="kindMeta(item.kind).type">{{ kindMeta(item.kind).label }}</el-tag>
+                  <el-tag v-if="kindMeta(item.kind).internal" size="mini" type="info" effect="plain">仅内部</el-tag>
+                </div>
+                <p class="demand-preline">{{ item.content }}</p>
+              </div>
+            </el-timeline-item>
+          </el-timeline>
+          <p v-if="!feed.length" class="demand-muted">
+            {{ staff ? '暂无回复、备注或操作记录。' : '暂无正式回复或进度更新。' }}
+          </p>
+        </section>
         <section v-if="detail.canFollowUp" class="detail-section">
           <h3>追问经办人</h3>
           <p class="demand-muted">
@@ -109,6 +96,37 @@
             type="warning"
             :closable="false"
           />
+        </section>
+        <section v-if="detail.canHandle" class="detail-section">
+          <h3>{{ composerMode === 'note' ? '添加内部备注' : '回复填报者' }}</h3>
+          <el-radio-group v-model="composerMode" size="small" class="composer-switch">
+            <el-radio-button label="reply">正式回复（填报者可见）</el-radio-button>
+            <el-radio-button label="note">内部备注（仅内部可见）</el-radio-button>
+          </el-radio-group>
+          <p class="demand-muted">
+            {{
+              composerMode === 'note'
+                ? '内部备注仅管理人员可见，不展示给填报者。'
+                : '正式回复发布后填报者可在「我的需求」查看；填报者追问会回到待我处理。'
+            }}
+          </p>
+          <el-input
+            v-model="replyText"
+            type="textarea"
+            :rows="4"
+            maxlength="10000"
+            show-word-limit
+            :placeholder="composerMode === 'note' ? '仅管理人员可见' : '发布后填报者即可查看'"
+          />
+          <div class="detail-actions">
+            <el-button v-if="composerMode === 'reply'" :loading="saving" @click="saveReply('DRAFT')">保存草稿</el-button
+            ><el-button
+              type="primary"
+              :loading="saving"
+              @click="saveReply(composerMode === 'note' ? 'NOTE' : 'REPLY')"
+              >{{ composerMode === 'note' ? '保存内部备注' : '发布回复' }}</el-button
+            >
+          </div>
         </section>
         <section v-if="detail.canAssign" class="detail-section">
           <h3>经办分派</h3>
@@ -160,26 +178,6 @@
               <el-button type="primary" :loading="saving" @click="saveOutcome">发布处理结果</el-button>
             </div></el-form
           >
-        </section>
-        <section v-if="detail.canHandle && tab !== 'audit'" class="detail-section">
-          <h3>{{ tab === 'notes' ? '添加内部备注' : '回复填报者' }}</h3>
-          <p v-if="tab !== 'notes'" class="demand-muted">
-            正式回复发布后填报者可在「我的需求」查看；填报者追问会回到待我处理。
-          </p>
-          <el-input
-            v-model="replyText"
-            type="textarea"
-            :rows="4"
-            maxlength="10000"
-            show-word-limit
-            :placeholder="tab === 'notes' ? '仅管理人员可见' : '发布后填报者即可查看'"
-          />
-          <div class="detail-actions">
-            <el-button v-if="tab !== 'notes'" :loading="saving" @click="saveReply('DRAFT')">保存草稿</el-button
-            ><el-button type="primary" :loading="saving" @click="saveReply(tab === 'notes' ? 'NOTE' : 'REPLY')">{{
-              tab === 'notes' ? '保存内部备注' : '发布回复'
-            }}</el-button>
-          </div>
         </section>
         <section v-if="detail.canPublish || detail.canAssign" class="detail-section">
           <h3>内部公示</h3>
@@ -251,7 +249,7 @@ export default {
       saving: false,
       detail: null,
       error: '',
-      tab: 'replies',
+      composerMode: 'reply',
       mobile: window.innerWidth < 768,
       id: '',
       anonymousReceipt: null,
@@ -273,14 +271,15 @@ export default {
     publicationPublished() {
       return !!(this.detail && this.detail.publication && this.detail.publication.published)
     },
-    replies() {
-      return this.detail.messages.filter((m) => ['REPLY', 'EVENT', 'FOLLOWUP'].includes(m.kind))
-    },
-    notes() {
-      return this.detail.messages.filter((m) => m.kind === 'NOTE')
-    },
-    audits() {
-      return this.detail.messages.filter((m) => m.kind === 'AUDIT')
+    feed() {
+      return (this.detail.messages || [])
+        .filter((m) => m.kind !== 'DRAFT')
+        .slice()
+        .sort(
+          (a, b) =>
+            String(a.createTime).localeCompare(String(b.createTime)) ||
+            String(a.id).localeCompare(String(b.id))
+        )
     },
     displayFields() {
       const data = this.detail.originalData || {}
@@ -328,6 +327,16 @@ export default {
     resize() {
       this.mobile = window.innerWidth < 768
     },
+    kindMeta(kind) {
+      const meta = {
+        REPLY: { label: '正式回复', type: 'success', internal: false },
+        EVENT: { label: '进度更新', type: 'info', internal: false },
+        FOLLOWUP: { label: '填报者追问', type: 'warning', internal: false },
+        NOTE: { label: '内部备注', type: 'info', internal: true },
+        AUDIT: { label: '操作记录', type: 'info', internal: true }
+      }[kind]
+      return meta || { label: kind || '记录', type: 'info', internal: true }
+    },
     isDepartmentField(field, dataKey) {
       const scheme = field.scheme && typeof field.scheme === 'object' ? field.scheme : {}
       const config = scheme.config && typeof scheme.config === 'object' ? scheme.config : {}
@@ -342,7 +351,7 @@ export default {
       this.id = id
       this.anonymousReceipt = receipt || null
       this.detail = null
-      this.tab = 'replies'
+      this.composerMode = 'reply'
       this.followupText = ''
       this.visible = true
       await this.reload()
@@ -548,6 +557,20 @@ export default {
 }
 .followup-waiting {
   margin-top: 12px;
+}
+.detail-feed {
+  margin-bottom: 8px;
+}
+.feed-item {
+  padding: 4px 0;
+}
+.feed-item.is-internal {
+  background: #f7f8fa;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.composer-switch {
+  margin-bottom: 10px;
 }
 .internal-message {
   padding: 16px 0;
