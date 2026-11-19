@@ -98,16 +98,16 @@
           />
         </section>
         <section v-if="detail.canHandle" class="detail-section">
-          <h3>{{ composerMode === 'note' ? '添加内部备注' : '回复填报者' }}</h3>
+          <h3>{{ composerMode === 'note' ? '添加内部备注' : '回复填报者（选填）' }}</h3>
           <el-radio-group v-model="composerMode" size="small" class="composer-switch">
-            <el-radio-button label="reply">正式回复（填报者可见）</el-radio-button>
+            <el-radio-button label="reply">正式回复（选填，填报者可见）</el-radio-button>
             <el-radio-button label="note">内部备注（仅内部可见）</el-radio-button>
           </el-radio-group>
           <p class="demand-muted">
             {{
               composerMode === 'note'
                 ? '内部备注仅管理人员可见，不展示给填报者。'
-                : '正式回复发布后填报者可在「我的需求」查看；填报者追问会回到待我处理。'
+                : '正式回复为选填，发布后填报者可在「我的需求」查看；公示只要求已发布明确的采纳结果。填报者追问会回到待我处理。'
             }}
           </p>
           <el-input
@@ -146,28 +146,28 @@
         <section v-if="detail.canHandle" class="detail-section">
           <h3>采纳与实施</h3>
           <el-form label-position="top"
-            ><el-form-item label="采纳结果"
-              ><el-select v-model="result.decision" @change="decisionChanged"
+            ><el-form-item label="采纳结果" required
+              ><el-select v-model="result.decision" placeholder="请选择采纳结果" @change="decisionChanged"
                 ><el-option
-                  v-for="(label, key) in decisions"
+                  v-for="(label, key) in outcomeDecisions"
                   :key="key"
                   :label="label"
                   :value="key" /></el-select></el-form-item
-            ><el-form-item label="采纳结果说明"
+            ><el-form-item label="采纳结果说明" required
               ><el-input
                 v-model="result.reason"
                 type="textarea"
                 :rows="3"
                 maxlength="10000"
                 show-word-limit /></el-form-item
-            ><el-form-item v-if="result.decision === 'ACCEPTED'" label="实施进度"
+            ><el-form-item v-if="result.decision === 'ACCEPTED'" label="实施进度" required
               ><el-select v-model="result.progress"
                 ><el-option
                   v-for="(label, key) in implementationProgresses"
                   :key="key"
                   :label="label"
                   :value="key" /></el-select></el-form-item
-            ><el-form-item v-if="result.progress === 'COMPLETED' && result.decision === 'ACCEPTED'" label="完成说明"
+            ><el-form-item v-if="result.progress === 'COMPLETED' && result.decision === 'ACCEPTED'" label="完成说明" required
               ><el-input
                 v-model="result.completion"
                 type="textarea"
@@ -194,7 +194,7 @@
             :closable="false"
           />
           <p class="demand-muted">
-            仅发布下列审核内容；不自动公开原始需求、附件和内部备注。摘要已根据采纳/完成说明预填，正文已根据最近一次正式回复预填，可修改后再发布。
+            仅发布下列审核内容；不自动公开原始需求、附件和内部备注。摘要按采纳/完成说明预填，正文优先使用最近一次正式回复，没有正式回复时使用采纳/完成说明；公示前必须已有明确采纳结果，可修改后再发布。
           </p>
           <el-form label-position="top"
             ><el-form-item label="公示标题"><el-input v-model="publication.title" maxlength="200" /></el-form-item
@@ -241,7 +241,7 @@ import {
   skipPublication,
   downloadAttachment
 } from '@/api/demand'
-import { decisions, progresses, implementationProgresses } from '@/utils/demand'
+import { decisions, progresses, implementationProgresses, outcomeDecisions } from '@/utils/demand'
 export default {
   name: 'DemandDemandDetail',
   data() {
@@ -263,7 +263,8 @@ export default {
       publication: {},
       decisions,
       progresses,
-      implementationProgresses
+      implementationProgresses,
+      outcomeDecisions
     }
   },
   computed: {
@@ -284,8 +285,12 @@ export default {
         )
     },
     displayFields() {
-      const data = this.detail.originalData || {}
-      const fields = this.detail.formFields || []
+      const data = { ...(this.detail.originalData || {}) }
+      delete data.demandDept
+      delete data.demandDeptlabel
+      const fields = (this.detail.formFields || []).filter(
+        (field) => !this.isDepartmentField(field)
+      )
       const used = new Set()
       const rows = []
       fields.forEach((field) => {
@@ -300,8 +305,7 @@ export default {
           key: dataKey,
           label: field.label || dataKey,
           files: this.findFiles(data[dataKey]),
-          text: this.display(data[dataKey]),
-          department: this.isDepartmentField(field, dataKey)
+          text: this.display(data[dataKey])
         })
       })
       Object.keys(data).forEach((key) => {
@@ -312,11 +316,23 @@ export default {
           key,
           label: key,
           files: this.findFiles(data[key]),
-          text: this.display(data[key]),
-          department: key === 'demandDept' || key === 'demandDeptlabel'
+          text: this.display(data[key])
         })
       })
-      return rows.filter((row) => row.department).concat(rows.filter((row) => !row.department))
+      const values = Array.isArray(this.detail.department)
+        ? this.detail.department
+        : this.detail.department
+        ? [this.detail.department]
+        : []
+      return [
+        {
+          key: '__department__',
+          label: '填报人部门',
+          files: [],
+          text: values.join('、') || '—'
+        },
+        ...rows
+      ]
     },
   },
   mounted() {
@@ -339,15 +355,12 @@ export default {
       }[kind]
       return meta || { label: kind || '记录', type: 'info', internal: true }
     },
-    isDepartmentField(field, dataKey) {
-      const scheme = field.scheme && typeof field.scheme === 'object' ? field.scheme : {}
+    isDepartmentField(field) {
+      const value = String((field && field.value) || '')
+      if (value === 'demandDept' || value === 'demandDeptlabel') return true
+      const scheme = field && field.scheme && typeof field.scheme === 'object' ? field.scheme : {}
       const config = scheme.config && typeof scheme.config === 'object' ? scheme.config : {}
-      return (
-        config.demandDept === true ||
-        config.demandDept === 'true' ||
-        dataKey === 'demandDept' ||
-        dataKey === 'demandDeptlabel'
-      )
+      return config.demandDept === true || config.demandDept === 'true'
     },
     async open(id, receipt) {
       this.id = id
@@ -366,9 +379,20 @@ export default {
         this.detail = response.data
         this.id = this.detail.id
         this.handlerId = this.detail.handlerId || ''
+        const decision = Object.prototype.hasOwnProperty.call(
+          outcomeDecisions,
+          this.detail.decision
+        )
+          ? this.detail.decision
+          : ''
         this.result = {
-          decision: this.detail.decision,
-          progress: this.detail.progress,
+          decision,
+          progress:
+            decision === 'ACCEPTED'
+              ? this.detail.progress && this.detail.progress !== 'NONE'
+                ? this.detail.progress
+                : 'PLANNED'
+              : 'NONE',
           reason: this.detail.reason || '',
           completion: this.detail.completion || '',
           revision: this.detail.revision
@@ -427,9 +451,15 @@ export default {
       this.result.progress = value === 'ACCEPTED' ? 'PLANNED' : 'NONE'
     },
     saveOutcome() {
-      if (this.result.decision !== 'PENDING' && !this.result.reason.trim())
-        return this.$message.warning('请填写采纳结果说明')
-      if (this.result.progress === 'COMPLETED' && !this.result.completion.trim())
+      if (!this.result.decision) return this.$message.warning('请选择采纳结果')
+      if (!this.result.reason.trim()) return this.$message.warning('请填写采纳结果说明')
+      if (this.result.decision === 'ACCEPTED' && !this.result.progress)
+        return this.$message.warning('请选择实施进度')
+      if (
+        this.result.decision === 'ACCEPTED' &&
+        this.result.progress === 'COMPLETED' &&
+        !this.result.completion.trim()
+      )
         return this.$message.warning('请填写完成说明')
       return this.run(() => outcome(this.id, this.result), '处理结果已发布')
     },
@@ -449,8 +479,8 @@ export default {
       }, '追问已提交')
     },
     async savePublication(published) {
-      if (published && !(this.detail.messages || []).some((m) => m.kind === 'REPLY'))
-        return this.$message.warning('请先发布正式回复，再公示')
+      if (published && (!this.detail.decision || this.detail.decision === 'PENDING'))
+        return this.$message.warning('请先发布明确的采纳结果，再公示')
       if (
         published &&
         (!this.publication.title.trim() || !this.publication.summary.trim() || !this.publication.content.trim())

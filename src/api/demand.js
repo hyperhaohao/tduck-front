@@ -11,6 +11,8 @@ export const assign = (id, data, config) => request.post(`/demand-api/requests/$
 export const outcome = (id, data, config) => request.post(`/demand-api/requests/${id}/outcome`, data, config)
 export const message = (id, data, config) => request.post(`/demand-api/requests/${id}/messages`, data, config)
 export const followUp = (id, data, config) => request.post(`/demand-api/requests/${id}/followup`, data, config)
+export const deleteRequest = (id, data, config) =>
+  request.post(`/demand-api/requests/${id}/delete`, data, config)
 export const markRead = (data) => request.post('/demand-api/read', data)
 export const publications = (includeArchived) =>
   request.get('/demand-api/publications', { params: { includeArchived: includeArchived ? 1 : 0 } })
@@ -41,6 +43,8 @@ export const exportPublications = (params) =>
     silent: true
   })
 export const adminForms = () => request.get('/demand-api/admin/forms')
+export const sortForms = (formKeys) =>
+  request.post('/demand-api/admin/forms/sort', { formKeys })
 export const deletedForms = () => request.get('/demand-api/admin/forms/deleted')
 export const deleteCollection = (key) =>
   request.post(`/demand-api/admin/forms/${encodeURIComponent(key)}/delete`)
@@ -70,8 +74,6 @@ export const removeOrgMember = (deptKey, userId) =>
   )
 export const setUserDepartments = (userId, deptKeys) =>
   request.put(`/demand-api/admin/users/${encodeURIComponent(userId)}/departments`, { deptKeys })
-export const ensureDepartmentField = (key) =>
-  request.post(`/demand-api/admin/forms/${encodeURIComponent(key)}/dept-field`)
 export const departmentMembers = (key) => request.get(`/demand-api/admin/forms/${key}/department-members`)
 export const saveDepartmentMember = (key, deptKey, data) =>
   request.post(`/demand-api/admin/forms/${key}/department-members/${encodeURIComponent(deptKey)}`, data)

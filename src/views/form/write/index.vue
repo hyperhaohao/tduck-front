@@ -156,11 +156,6 @@ export default {
       return !this.demandMeta.managed || this.demandMode === 'anonymous' || this.logged
     }
   },
-  watch: {
-    demandMode(value) {
-      this.syncDepartmentField(value)
-    }
-  },
   async created() {
     this.formKey = this.$route.query.key || this.$route.params.key
     try {
@@ -205,38 +200,6 @@ export default {
         this.initializeOriginalForm().catch((e) => {
           this.demandLoadError = e.msg || '加载失败，请刷新后重试。'
         })
-    },
-    syncDepartmentField(mode) {
-      const form = this.$refs.bizProjectForm
-      const container = form && form.$refs && form.$refs.GenerateForm
-      const generated = container && container.$refs && container.$refs.pageContent
-      if (!generated || !generated.formModel) return
-      const field = ((form.formConf && form.formConf.fields) || []).find(
-        (item) => item.config && item.config.demandDept
-      )
-      if (!field) return
-      const fallback = (field.config && field.config.defaultValue) || ['无']
-      const value = mode === 'anonymous' ? ['无'] : fallback
-      const next = Array.isArray(value) ? [...value] : [value]
-      const item = this.findGeneratedItem(generated, field.vModel)
-      if (item) item.dataModel = next
-      this.$set(generated.formModel, field.vModel, next)
-      if (container.pageFormModel) this.$set(container.pageFormModel, field.vModel, next)
-    },
-    findGeneratedItem(component, vModel) {
-      if (!component) return null
-      if (
-        component.$options &&
-        component.$options.name === 'GenerateFormItem' &&
-        component.item &&
-        component.item.vModel === vModel
-      )
-        return component
-      for (const child of component.$children || []) {
-        const found = this.findGeneratedItem(child, vModel)
-        if (found) return found
-      }
-      return null
     },
     demandLogin() {
       this.$router.push({ path: '/login/entry', query: { redirect: this.$route.fullPath } })

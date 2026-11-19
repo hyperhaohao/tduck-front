@@ -177,12 +177,12 @@
       >
         <p class="demand-muted">将同一采纳结果与实施进度应用到已选 {{ selectedRows.length }} 条需求。</p>
         <el-form label-position="top"
-          ><el-form-item label="采纳结果"
+          ><el-form-item label="采纳结果" required
             ><el-select v-model="batchOutcome.decision" style="width: 100%" @change="batchDecisionChanged"
-              ><el-option v-for="(label, key) in decisions" :key="key" :label="label" :value="key" /></el-select></el-form-item
-          ><el-form-item label="采纳结果说明"
+              ><el-option v-for="(label, key) in outcomeDecisions" :key="key" :label="label" :value="key" /></el-select></el-form-item
+          ><el-form-item label="采纳结果说明" required
             ><el-input v-model="batchOutcome.reason" type="textarea" :rows="3" maxlength="10000" /></el-form-item
-          ><el-form-item v-if="batchOutcome.decision === 'ACCEPTED'" label="实施进度"
+          ><el-form-item v-if="batchOutcome.decision === 'ACCEPTED'" label="实施进度" required
             ><el-select v-model="batchOutcome.progress" style="width: 100%"
               ><el-option
                 v-for="(label, key) in implementationProgresses"
@@ -192,6 +192,7 @@
           ><el-form-item
             v-if="batchOutcome.decision === 'ACCEPTED' && batchOutcome.progress === 'COMPLETED'"
             label="完成说明"
+            required
             ><el-input v-model="batchOutcome.completion" type="textarea" :rows="3" maxlength="10000" /></el-form-item
         ></el-form>
         <span slot="footer"
@@ -229,7 +230,13 @@ import {
   autoPublish,
   skipPublication
 } from '@/api/demand'
-import { decisions, progresses, implementationProgresses, demandState } from '@/utils/demand'
+import {
+  decisions,
+  progresses,
+  implementationProgresses,
+  outcomeDecisions,
+  demandState
+} from '@/utils/demand'
 import DemandDetail from './components/DemandDetail'
 import FormOverview from './components/FormOverview'
 import exportMixin from './exportMixin'
@@ -246,6 +253,7 @@ export default {
       decisions,
       progresses,
       implementationProgresses,
+      outcomeDecisions,
       scope: this.$route.path.endsWith('/pending') ? 'pending' : 'mine',
       formSummaries: [],
       formKeyword: '',
@@ -473,8 +481,8 @@ export default {
     },
     async saveBatchOutcome() {
       const form = this.batchOutcome
-      if (form.decision !== 'PENDING' && !form.reason.trim())
-        return this.$message.warning('请填写采纳结果说明')
+      if (!form.decision) return this.$message.warning('请选择采纳结果')
+      if (!form.reason.trim()) return this.$message.warning('请填写采纳结果说明')
       if (form.decision === 'ACCEPTED' && !form.progress) return this.$message.warning('请选择实施进度')
       if (form.decision === 'ACCEPTED' && form.progress === 'COMPLETED' && !form.completion.trim())
         return this.$message.warning('请填写完成说明')
@@ -497,14 +505,16 @@ export default {
     },
     async batchPublish() {
       const selected = [...this.selectedRows]
-      const candidates = selected.filter((row) => !row.publicationPublished)
-      const rows = candidates.filter((row) => row.replyTime)
+      const candidates = selected.filter(
+        (row) => !row.publicationPublished && !row.publicationArchived
+      )
+      const rows = candidates.filter((row) => row.decision && row.decision !== 'PENDING')
       const preSkipped = selected.length - rows.length
-      if (!candidates.length) return this.$message.info('所选需求均已公示')
-      if (!rows.length) return this.$message.warning('所选需求均未发布正式回复，无法公示')
+      if (!candidates.length) return this.$message.info('所选需求均已公示或归档')
+      if (!rows.length) return this.$message.warning('所选需求均未明确采纳结果，无法公示')
       try {
         await this.$confirm(
-          `将自动使用需求标题、采纳说明和最近正式回复生成并发布 ${rows.length} 条公示；已公示或未发布正式回复的 ${preSkipped} 条将跳过。是否继续？`,
+          `将自动使用需求标题、采纳说明和最近正式回复生成并发布 ${rows.length} 条公示；已公示、已归档或未明确采纳结果的 ${preSkipped} 条将跳过。是否继续？`,
           '批量公示',
           { type: 'warning' }
         )

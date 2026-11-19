@@ -29,6 +29,7 @@ export async function refreshDemand() {
   return demandState
 }
 export const decisions = { PENDING: '待评估', ACCEPTED: '采纳', DEFERRED: '暂缓', REJECTED: '不采纳' }
+export const outcomeDecisions = { ACCEPTED: '采纳', DEFERRED: '暂缓', REJECTED: '不采纳' }
 export const progresses = { NONE: '—', PLANNED: '待实施', IN_PROGRESS: '实施中', COMPLETED: '已完成' }
 export const badgeValue = (value) => Math.max(0, Number(value) || 0)
 export function safeLocalPath(path, fallback = '/demand/home') {

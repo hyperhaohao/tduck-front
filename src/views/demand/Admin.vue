@@ -171,9 +171,16 @@
                 ></el-table-column
               ><el-table-column label="提报时间" width="122"
                 ><template slot-scope="s">{{ date(s.row.createTime) }}</template></el-table-column
-              ><el-table-column label="操作" width="90"
+              ><el-table-column label="操作" width="140"
                 ><template slot-scope="s"
-                  ><el-button type="text" @click.stop="openDetail(s.row)">分派 / 公示</el-button></template
+                  ><el-button type="text" @click.stop="openDetail(s.row)">分派 / 公示</el-button
+                  ><el-button
+                    v-if="s.row.canManage"
+                    type="text"
+                    class="danger-text"
+                    @click.stop="deleteDemand(s.row)"
+                    >删除</el-button
+                  ></template
                 ></el-table-column
               ><el-table-column v-if="roomy" />
               </el-table
@@ -208,6 +215,14 @@
                       class="demand-card-action is-primary"
                       @click.stop="openDetail(row)"
                       >分派 / 公示</el-button
+                    >
+                    <el-button
+                      v-if="row.canManage"
+                      size="mini"
+                      type="text"
+                      class="danger-text"
+                      @click.stop="deleteDemand(row)"
+                      >删除</el-button
                     >
                   </div>
                 </div>
@@ -729,12 +744,7 @@ export default {
         this.saving = false
       }
     },
-    async editOriginal(form) {
-      try {
-        await api.ensureDepartmentField(form.formKey)
-      } catch (e) {
-        // 字段补入失败不阻塞设计器；填写接口会兜底注入
-      }
+    editOriginal(form) {
       this.$router.push({ path: '/project/form', query: { key: form.formKey } })
     },
     formStatus(form) {
@@ -796,8 +806,7 @@ export default {
         this.saving = false
       }
     },
-    async deleteCollection(form) {
-      const demands = Number(form.demandCount || 0)
+    async deleteCollection(form) {      const demands = Number(form.demandCount || 0)
       try {
         await this.$confirm(
           demands > 0
@@ -815,6 +824,30 @@ export default {
         const count = Number((r.data && r.data.demandCount) || 0)
         this.$message.success(count > 0 ? '已移入回收站，需求与答卷已保留' : '已移入回收站')
         await this.load()
+      } finally {
+        this.saving = false
+      }
+    },
+    async deleteDemand(row) {
+      if (!row.canManage) return
+      try {
+        await this.$confirm(
+          `删除后，需求「${row.title}」的消息、已读和公示将不可恢复；原答卷仍保留在原表单数据中。确认删除？`,
+          '删除需求',
+          { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' }
+        )
+      } catch (e) {
+        return
+      }
+      this.saving = true
+      try {
+        await api.deleteRequest(row.id, { revision: row.revision })
+        this.$message.success('需求已删除')
+        await this.loadTable()
+        await this.loadTableForms()
+        await refreshDemand()
+      } catch (e) {
+        if (e && e.code === 409) await this.loadTable()
       } finally {
         this.saving = false
       }

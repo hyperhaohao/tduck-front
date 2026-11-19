@@ -1,10 +1,11 @@
 const { test, expect } = require('@playwright/test')
 const path = require('path')
 const notices = { enabled: true, admin: true, global: true, handler: true, manage: true, mineUnread: 2, pending: 5, publicationUnread: 3 }
-const forms = [
+const formSeed = [
   { formKey: 'A', name: '信息化需求征集', summary: '征集业务系统优化、报表改进与工作流程建议。', status: 2, published: true, visibility: 'LOGIN', allowAnonymous: true, revision: 0, demandCount: 2 },
   { formKey: 'B', name: '设备改善需求征集', summary: '提交设备维护、现场改善和安全优化需求。', status: 2, published: true, visibility: 'LOGIN', allowAnonymous: false, revision: 0, demandCount: 0 }
 ]
+let forms = []
 const deletedForms = [
   { formKey: 'D', name: '已删除收集单', demandCount: 2, dataCount: 2, deletedAt: '2026-11-16 10:00:00', deletedByName: '维护管理员' },
   { formKey: 'E', name: '空收集单', demandCount: 0, dataCount: 0, deletedAt: '2026-11-16 10:10:00', deletedByName: '维护管理员' }
@@ -36,10 +37,11 @@ let calls = []
 let options = {}
 function makeDetail(opts = {}) {
   const staff = opts.canViewTable !== false
-  return { ...row, canViewTable: staff, canHandle: staff && opts.canHandle !== false, canAssign: staff && opts.canAssign !== false, canPublish: staff && opts.canPublish !== false, canManage: staff && opts.canManage !== false, canFollowUp: !!opts.canFollowUp, followupPending: !!opts.followupPending, publicationSkipped: false, originalData: { title: row.title, description: '希望能按设备编号查询维护历史，减少重复查找。' }, formFields: [{ value: 'title', label: '需求标题' }, { value: 'description', label: '需求说明' }], reason: '采纳，已安排实施。', completion: '', messages: opts.noReply ? [] : [{ id: 'reply-1', kind: 'REPLY', authorName: '测试经办人', content: '已完成初步评估，目前正在实施。', createTime: '2026-11-13 10:00:00' }], publication: null }
+  return { ...row, decision: opts.pendingDecision ? 'PENDING' : row.decision, department: opts.department || ['瑞玛电气 / 技术中心'], canViewTable: staff, canHandle: staff && opts.canHandle !== false, canAssign: staff && opts.canAssign !== false, canPublish: staff && opts.canPublish !== false, canManage: staff && opts.canManage !== false, canFollowUp: !!opts.canFollowUp, followupPending: !!opts.followupPending, publicationSkipped: false, originalData: { title: row.title, description: '希望能按设备编号查询维护历史，减少重复查找。' }, formFields: [{ value: 'title', label: '需求标题' }, { value: 'description', label: '需求说明' }], reason: '采纳，已安排实施。', completion: '', messages: opts.noReply ? [] : [{ id: 'reply-1', kind: 'REPLY', authorName: '测试经办人', content: '已完成初步评估，目前正在实施。', createTime: '2026-11-13 10:00:00' }], publication: null }
 }
 async function mockApi(page, role = 'all', opts = {}) {
   detail = makeDetail(opts)
+  forms = formSeed.map(item => ({ ...item }))
   calls = []
   options = opts
   departmentGrants = [{ deptKey: 'D1', name: '技术部', memberCount: 3, canFill: false, canHandle: false, canManage: !opts.noDeptManager }]
@@ -198,6 +200,20 @@ async function mockApi(page, role = 'all', opts = {}) {
       calls.push({ type: 'importDepartments', body: route.request().postDataJSON() })
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, data: { departments: 2, memberships: 1, replaced: true }, msg: null }) })
     }
+    if (api === '/demand-api/admin/forms/sort' && route.request().method() === 'POST') {
+      const body = route.request().postDataJSON() || {}
+      calls.push({ type: 'sortForms', formKeys: body.formKeys })
+      const byKey = new Map(forms.map((form) => [form.formKey, form]))
+      const ordered = (body.formKeys || []).map((key) => byKey.get(key)).filter(Boolean)
+      const rest = forms.filter((form) => !(body.formKeys || []).includes(form.formKey))
+      forms = [...ordered, ...rest]
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, data: null, msg: null }) })
+    }
+    if (/^\/demand-api\/requests\/[^/]+\/delete$/.test(api) && route.request().method() === 'POST') {
+      const id = api.split('/')[3]
+      calls.push({ type: 'deleteDemand', id, body: route.request().postDataJSON() })
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, data: null, msg: null }) })
+    }
     let data = null
     if (api === '/demand-api/capabilities') data = { ...notices, admin: role === 'all' || role === 'assigned', global: role === 'all', handler: role !== 'ordinary', manage: role === 'all' || role === 'manager' || role === 'assigned' }
     else if (api === '/demand-api/forms') data = forms
@@ -207,7 +223,7 @@ async function mockApi(page, role = 'all', opts = {}) {
     else if (/^\/demand-api\/forms\//.test(api)) data = { managed: true, allowAnonymous: api.endsWith('/A') }
     else if (api === '/demand-api/requests') {
       const formKey = url.searchParams.get('formKey')
-      const aRows = [{ ...row, publicationPublished: !!options.publishedFirst, followupPending: !!options.followupPending }, rowA2]
+      const aRows = [{ ...row, publicationPublished: !!options.publishedFirst, followupPending: !!options.followupPending }, { ...rowA2, decision: options.pendingSecond ? 'PENDING' : rowA2.decision }]
       const rows = role === 'assigned'
         ? formKey === 'B' ? [] : aRows
         : formKey === 'A' ? aRows : formKey === 'B' ? [rowB] : [...aRows, rowB]
@@ -250,18 +266,10 @@ async function mockApi(page, role = 'all', opts = {}) {
     else if (api === '/user/form/details/A') data = {
       userForm: { formKey: 'A', name: '信息化需求征集', type: 1, status: 2 },
       formItems: [{
-        id: 1, formKey: 'A', formItemId: 'demandDept', type: 'SELECT', label: '填报人部门',
-        required: true, showLabel: true, sort: 1, span: 24, displayType: false, hideType: false,
-        specialType: false, defaultValue: JSON.stringify(['技术部', '研发组']), regList: [],
-        placeholder: '请选择',
-        scheme: {
-          typeId: 'SELECT', vModel: 'demandDept', placeholder: '请选择', multiple: true, disabled: true,
-          config: {
-            label: '填报人部门', tag: 't-select', tagIcon: 'select', span: 24, required: true, showLabel: true,
-            options: [{ label: '技术部', value: '技术部' }, { label: '研发组', value: '研发组' }, { label: '无', value: '无' }],
-            defaultValue: ['技术部', '研发组'], demandDept: true, formId: 'demandDept'
-          }
-        }
+        id: 1, formKey: 'A', formItemId: 'title', type: 'TEXT', label: '需求标题',
+        required: false, showLabel: true, sort: 1, span: 24, displayType: false, hideType: false,
+        specialType: false, defaultValue: null, regList: [], placeholder: '请输入需求标题',
+        scheme: { typeId: 'TEXT', vModel: 'title', placeholder: '请输入需求标题', config: { label: '需求标题', span: 24, showLabel: true } }
       }],
       userFormTheme: null, formLogic: null
     }
@@ -303,9 +311,10 @@ test('opening request marks read, handler publishes result and reply', async ({ 
   await expect(page.locator('.demand-detail-drawer')).toBeVisible(); await expect(page.getByRole('heading', { name: '采纳与实施' })).toBeVisible(); await page.getByPlaceholder('发布后填报者即可查看').fill('新的正式回复'); await page.getByRole('button', { name: '发布回复', exact: true }).click(); await expect(page.getByText('新的正式回复', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: '发布处理结果', exact: true }).click(); await expect(page.getByText('处理结果已发布', { exact: true })).toBeVisible(); await noOverflow(page)
 })
-test('detail shows field labels and option text instead of raw ids', async ({ page }) => {
+test('detail shows department snapshot first and hides legacy keys', async ({ page }) => {
   await login(page); await mockApi(page)
-  detail.originalData = { demandDept: ['瑞玛电气 / 技术中心'], title: '测试', radio1795065047272: 1, radio1795065047272label: 'P0 紧急且重要，需尽快启动' }
+  detail.department = ['瑞玛电气 / 技术中心']
+  detail.originalData = { demandDept: ['旧值'], demandDeptlabel: ['旧值'], title: '测试', radio1795065047272: 1, radio1795065047272label: 'P0 紧急且重要，需尽快启动' }
   detail.formFields = [
     { value: 'title', label: '需求名称（一句话概括）' },
     { value: 'radio1795065047272label', label: '需求优先级' },
@@ -315,7 +324,32 @@ test('detail shows field labels and option text instead of raw ids', async ({ pa
   const drawer = page.locator('.demand-detail-drawer'); const fields = drawer.locator('.original-field')
   await expect(fields.first()).toContainText('填报人部门'); await expect(fields.first()).toContainText('瑞玛电气 / 技术中心')
   await expect(fields.filter({ hasText: '需求优先级' })).toContainText('P0 紧急且重要，需尽快启动')
-  await expect(drawer).not.toContainText('radio1795065047272'); await expect(drawer).not.toContainText('demandDept')
+  await expect(fields.filter({ hasText: '填报人部门' })).toHaveCount(1)
+  await expect(drawer).not.toContainText('demandDept')
+})
+test('outcome requires an explicit decision and shows required markers', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 }); await login(page); await mockApi(page, 'manager')
+  await page.goto('/demand/pending'); await page.getByRole('button', { name: '进入信息化需求征集' }).click(); await page.getByRole('button', { name: '查看', exact: true }).first().click()
+  const drawer = page.locator('.demand-detail-drawer')
+  await expect(drawer.locator('.el-form-item').filter({ hasText: '采纳结果' }).first()).toHaveClass(/is-required/)
+  await expect(drawer.locator('.el-form-item').filter({ hasText: '采纳结果说明' })).toHaveClass(/is-required/)
+  await drawer.locator('.el-form-item').filter({ hasText: '采纳结果' }).first().locator('.el-select').click()
+  const options = page.locator('.el-select-dropdown:visible .el-select-dropdown__item')
+  await expect(options.filter({ hasText: /^待评估$/ })).toHaveCount(0)
+  await expect(options.filter({ hasText: /^采纳$/ })).toHaveCount(1)
+  await options.filter({ hasText: /^暂缓$/ }).click()
+  await drawer.locator('.el-form-item').filter({ hasText: '采纳结果说明' }).locator('textarea').fill('暂缓说明')
+  await drawer.getByRole('button', { name: '发布处理结果' }).click()
+  await expect(page.getByText('处理结果已发布', { exact: true })).toBeVisible()
+  expect(calls.find((c) => c.type === 'outcome').body.decision).toBe('DEFERRED')
+})
+
+test('outcome cannot be published while pending', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 }); await login(page); await mockApi(page, 'manager', { pendingDecision: true })
+  await page.goto('/demand/pending'); await page.getByRole('button', { name: '进入信息化需求征集' }).click(); await page.getByRole('button', { name: '查看', exact: true }).first().click()
+  await page.getByRole('button', { name: '发布处理结果' }).click()
+  await expect(page.getByText('请选择采纳结果', { exact: true })).toBeVisible()
+  expect(calls.some((c) => c.type === 'outcome')).toBeFalsy()
 })
 test('publication read only clears after opening detail', async ({ page }) => {
   await login(page); await mockApi(page); let reads = 0; page.on('request', req => { if (req.url().includes('/demand-api/read')) reads++ }); await page.goto('/demand/publications'); await expect(page.getByRole('button', { name: '进入信息化需求征集' })).toBeVisible(); expect(reads).toBe(0); await page.getByRole('button', { name: '进入信息化需求征集' }).click(); await expect(page.locator('.demand-list-desktop .request-title').filter({ hasText: '设备维护记录查询优化' })).toBeVisible(); expect(reads).toBe(0); await page.getByRole('button', { name: '查看公示' }).click(); await expect(page.getByText('已安排实施，完成后将更新进展。')).toBeVisible(); expect(reads).toBe(1)
@@ -409,17 +443,39 @@ test('write defaults to login and anonymous mode is optional', async ({ page }) 
   await mockApi(page); const errors = []; page.on('pageerror', e => errors.push(e.message)); await page.goto('/s/A'); await expect(page.getByRole('button', { name: '登录并开始填写' })).toBeVisible(); await expect(page.getByText('匿名填写', { exact: true })).toBeVisible(); await expect(page.locator('.form-container')).toHaveCount(0); expect(errors).toEqual([])
   await page.getByText('匿名填写', { exact: true }).click(); await expect(page.getByRole('button', { name: '登录并开始填写' })).toHaveCount(0); await expect(page.getByText('本次匿名提交，不关联登录账户。提交后请保存查询码。')).toBeVisible()
 })
-test('department field is filled and locked for the logged-in submitter', async ({ page }) => {
-  await page.setViewportSize({ width: 1024, height: 768 }); await login(page); await mockApi(page)
-  await page.goto('/s/A'); await expect(page.getByText('填报人部门')).toBeVisible()
-  const field = page.locator('.form-container .el-select').filter({ hasText: '技术部' }).first()
-  await expect(field).toBeVisible(); await expect(field).toContainText('研发组')
-  await expect(field.locator('input').first()).toBeDisabled()
-  await page.getByText('匿名填写', { exact: true }).click()
-  await page.waitForTimeout(400)
-  await expect(field.locator('.el-select__tags .el-tag')).toHaveCount(1)
-  await expect(field).toContainText('无')
-  await page.screenshot({ path: 'test-results/department-field.png', fullPage: true, animations: 'disabled' })
+test('global admin saves home collection order', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 }); await login(page); await mockApi(page)
+  await page.goto('/demand/home')
+  await expect(page.getByText('拖动卡片右侧手柄，调整所有用户看到的收集单顺序')).toBeVisible()
+  await expect(page.locator('.demand-card-drag')).toHaveCount(2)
+  await page.evaluate(() => {
+    const vm = document.querySelector('.demand-page').__vue__
+    const moved = vm.forms.splice(1, 1)[0]
+    vm.forms.splice(0, 0, moved)
+    vm.onSortEnd({ oldIndex: 1, newIndex: 0 })
+  })
+  await page.getByRole('button', { name: '保存排序' }).click()
+  await expect(page.getByText('收集单顺序已保存', { exact: true })).toBeVisible()
+  expect(calls.filter((c) => c.type === 'sortForms').map((c) => c.formKeys)).toEqual([['B', 'A']])
+  await expect(page.locator('.collection-grid .demand-card-title').first()).toHaveText('设备改善需求征集')
+})
+test('ordinary users cannot sort home collections', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 }); await login(page); await mockApi(page, 'ordinary')
+  await page.goto('/demand/home')
+  await expect(page.locator('.demand-card-drag')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '保存排序' })).toHaveCount(0)
+  await expect(page.getByText('拖动卡片右侧手柄，调整所有用户看到的收集单顺序')).toHaveCount(0)
+})
+test('sorting disables while filtering and stays off the collection page', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 }); await login(page); await mockApi(page)
+  await page.goto('/demand/home')
+  await expect(page.locator('.demand-card-drag')).toHaveCount(2)
+  await page.getByPlaceholder('搜索需求收集单').fill('设备')
+  await expect(page.getByText('清空搜索与状态筛选后可调整收集单顺序')).toBeVisible()
+  await expect(page.locator('.demand-card-drag')).toHaveCount(0)
+  await page.goto('/demand/forms')
+  await expect(page.locator('.demand-card-drag')).toHaveCount(0)
+  await expect(page.getByText('拖动卡片右侧手柄，调整所有用户看到的收集单顺序')).toHaveCount(0)
 })
 test('login page only presents login and administrator configuration opens on mobile', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 }); await login(page); await mockApi(page); await page.goto('/login/entry'); await expect(page.getByRole('button', { name: '登录', exact: true })).toBeVisible(); await expect(page.getByText(/Casdoor/i)).toHaveCount(0); await noOverflow(page)
@@ -636,12 +692,19 @@ test('manager sees pending menu and can skip publication in detail', async ({ pa
   await expect(page.getByText('该需求已标记为不公示；仍可在此重新发布公示。')).toBeVisible()
 })
 
-test('manual publication requires a formal reply first', async ({ page }) => {
+test('publication only requires an explicit outcome, not a formal reply', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 }); await login(page); await mockApi(page, 'manager', { noReply: true })
   await page.goto('/demand/pending'); await page.getByRole('button', { name: '进入信息化需求征集' }).click(); await page.getByRole('button', { name: '查看', exact: true }).first().click()
   await expect(page.getByRole('heading', { name: '内部公示' })).toBeVisible()
   await page.getByRole('button', { name: '审核并发布公示' }).click()
-  await expect(page.getByText('请先发布正式回复，再公示', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '确定', exact: true }).click()
+  await expect(page.getByText('公示已发布', { exact: true })).toBeVisible()
+})
+test('publication requires an explicit outcome', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 }); await login(page); await mockApi(page, 'manager', { pendingDecision: true })
+  await page.goto('/demand/pending'); await page.getByRole('button', { name: '进入信息化需求征集' }).click(); await page.getByRole('button', { name: '查看', exact: true }).first().click()
+  await page.getByRole('button', { name: '审核并发布公示' }).click()
+  await expect(page.getByText('请先发布明确的采纳结果，再公示', { exact: true })).toBeVisible()
   await expect(page.getByText('公示已发布', { exact: true })).toHaveCount(0)
 })
 
@@ -665,6 +728,16 @@ test('manager batch publish skips published rows and batch skip uses per-row rev
   await expect(page.getByText('批量公示完成：成功 1 条，跳过 1 条')).toBeVisible(); expect(calls.filter(c => c.type === 'autoPublish').map(c => c.body.revision)).toEqual([5])
   await page.locator('.demand-list-desktop th .el-checkbox').first().click(); await page.getByRole('button', { name: '批量跳过公示', exact: true }).click(); await page.getByRole('button', { name: '确定', exact: true }).click()
   await expect(page.getByText('批量跳过公示完成：成功 1 条，跳过 1 条')).toBeVisible(); expect(calls.filter(c => c.type === 'skip').map(c => c.body.revision)).toEqual([5])
+})
+
+test('batch publish skips rows without an explicit outcome', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 }); await login(page); await mockApi(page, 'manager', { pendingSecond: true })
+  await page.goto('/demand/pending'); await page.getByRole('button', { name: '进入信息化需求征集' }).click()
+  await page.locator('.demand-list-desktop th .el-checkbox').first().click(); await page.getByRole('button', { name: '批量公示', exact: true }).click()
+  const box = page.locator('.el-message-box'); await expect(box).toContainText('未明确采纳结果')
+  await box.getByRole('button', { name: '确定', exact: true }).click()
+  await expect(page.getByText('批量公示完成：成功 1 条，跳过 1 条')).toBeVisible()
+  expect(calls.filter((c) => c.type === 'autoPublish').length).toBe(1)
 })
 
 test('manager batch outcome applies one result with per-row revision', async ({ page }) => {
@@ -705,6 +778,27 @@ test('admin member removal keeps the last manager', async ({ page }) => {
   await memberRow.getByRole('button', { name: '移除' }).click(); await page.getByRole('button', { name: '确认移除' }).click()
   await expect(page.getByText('每个收集单至少保留一名有效单据管理员', { exact: true })).toBeVisible()
   await expect(memberRow).toBeVisible()
+})
+
+test('manager deletes a demand from the admin table', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 }); await login(page); await mockApi(page)
+  await page.goto('/demand/admin'); await page.getByText('需求总表与公示审核', { exact: true }).click(); await page.getByRole('button', { name: '进入信息化需求征集' }).click()
+  const row = page.locator('.demand-list-desktop tr').filter({ hasText: '优化设备维护记录查询' })
+  await row.getByRole('button', { name: '删除' }).click()
+  const box = page.locator('.el-message-box'); await expect(box).toContainText('原答卷仍保留在原表单数据中')
+  await box.getByRole('button', { name: '确认删除' }).click()
+  await expect(page.getByText('需求已删除', { exact: true })).toBeVisible()
+  expect(calls.filter((c) => c.type === 'deleteDemand').map((c) => ({ id: c.id, revision: c.body.revision }))).toEqual([{ id: 'demand-1', revision: 1 }])
+})
+
+test('manager deletes a demand from the mobile admin card', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 }); await login(page); await mockApi(page)
+  await page.goto('/demand/admin'); await page.getByText('需求总表与公示审核', { exact: true }).click(); await page.getByRole('button', { name: '进入信息化需求征集' }).click()
+  const card = page.locator('.demand-list-mobile .demand-card').filter({ hasText: '优化设备维护记录查询' })
+  await card.getByRole('button', { name: '删除' }).click()
+  await page.locator('.el-message-box').getByRole('button', { name: '确认删除' }).click()
+  await expect(page.getByText('需求已删除', { exact: true })).toBeVisible()
+  expect(calls.some((c) => c.type === 'deleteDemand' && c.id === 'demand-1')).toBeTruthy()
 })
 
 test('small screens keep export available and hide batch controls', async ({ page }) => {
@@ -807,11 +901,11 @@ test('admin org structure maintains departments and user cards', async ({ page }
   await noOverflow(page)
 })
 
-test('opening the designer ensures the department field', async ({ page }) => {
+test('opening the designer does not inject the department field', async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 768 }); await login(page); await mockApi(page)
   await page.goto('/demand/admin'); await page.getByRole('button', { name: '设计与发布' }).first().click()
-  await expect.poll(() => calls.find((call) => call.type === 'ensureDeptField')).toBeTruthy()
   await expect(page).toHaveURL(/\/project\/form\?key=A/)
+  expect(calls.some((call) => call.type === 'ensureDeptField')).toBeFalsy()
 })
 
 test('admin more menu stays within 320px viewport', async ({ page }) => {
@@ -903,7 +997,7 @@ test('detail feed explains empty state and exposes note composer', async ({ page
   await expect(drawer.getByText('合成内部备注', { exact: true })).toBeVisible()
   await expect(drawer.getByText('内部备注', { exact: true })).toBeVisible()
   await expect(drawer.getByText('仅内部', { exact: true })).toBeVisible()
-  await drawer.getByText('正式回复（填报者可见）', { exact: true }).click()
+  await drawer.getByText('正式回复（选填，填报者可见）', { exact: true }).click()
   await expect(drawer.getByRole('button', { name: '发布回复', exact: true })).toBeVisible()
 })
 
