@@ -2,8 +2,8 @@ const { test, expect } = require('@playwright/test')
 const path = require('path')
 const notices = { enabled: true, admin: true, global: true, handler: true, manage: true, mineUnread: 2, pending: 5, publicationUnread: 3 }
 const formSeed = [
-  { formKey: 'A', name: '信息化需求征集', summary: '征集业务系统优化、报表改进与工作流程建议。', status: 2, published: true, visibility: 'LOGIN', allowAnonymous: true, revision: 0, demandCount: 2 },
-  { formKey: 'B', name: '设备改善需求征集', summary: '提交设备维护、现场改善和安全优化需求。', status: 2, published: true, visibility: 'LOGIN', allowAnonymous: false, revision: 0, demandCount: 0 }
+  { formKey: 'A', name: '信息化需求征集', summary: '征集业务系统优化、报表改进与工作流程建议。', status: 2, published: true, visibility: 'LOGIN', allowAnonymous: true, revision: 0, demandCount: 2, collectOnly: false, canFill: true, canHandle: true, canManage: true },
+  { formKey: 'B', name: '设备改善需求征集', summary: '提交设备维护、现场改善和安全优化需求。', status: 2, published: true, visibility: 'LOGIN', allowAnonymous: false, revision: 0, demandCount: 0, collectOnly: false, canFill: true, canHandle: true, canManage: true }
 ]
 let forms = []
 const deletedForms = [
@@ -29,7 +29,7 @@ let departments = []
 let departmentRoster = []
 let departmentGrants = []
 let memberGrants = []
-const row = { id: 'demand-1', title: '优化设备维护记录查询', requestNo: 'REQ-20261113-TEST001', formKey: 'A', formName: '信息化需求征集', submitterName: '测试员工', handlerId: '30', handlerName: '测试经办人', decision: 'ACCEPTED', progress: 'IN_PROGRESS', unread: true, revision: 1, publicVersion: 3, createTime: '2026-11-13 09:00:00', replyTime: '2026-11-13 10:00:00', publicationPublished: false, publicationSkipped: false, publicationVersion: 0, canHandle: true, canManage: true, followupPending: false }
+const row = { id: 'demand-1', title: '优化设备维护记录查询', requestNo: 'REQ-20261113-TEST001', formKey: 'A', formName: '信息化需求征集', submitterName: '测试员工', handlerId: '30', handlerName: '测试经办人', decision: 'ACCEPTED', progress: 'IN_PROGRESS', unread: true, revision: 1, publicVersion: 3, createTime: '2026-11-13 09:00:00', replyTime: '2026-11-13 10:00:00', publicationPublished: false, publicationSkipped: false, publicationVersion: 0, canHandle: true, canManage: true, followupPending: false, collectOnly: false }
 const rowA2 = { ...row, id: 'demand-3', title: '新增报表导出字段', requestNo: 'REQ-20261113-TEST003', revision: 5, unread: false, formName: '信息化需求征集与设备改善需求联合征集（超长名称用于验证省略）' }
 const rowB = { ...row, id: 'demand-2', title: '车间照明改善', requestNo: 'REQ-20261113-TEST002', formKey: 'B', formName: '设备改善需求征集', unread: false }
 let detail
@@ -37,13 +37,14 @@ let calls = []
 let options = {}
 function makeDetail(opts = {}) {
   const staff = opts.canViewTable !== false
-  return { ...row, decision: opts.pendingDecision ? 'PENDING' : row.decision, department: opts.department || ['瑞玛电气 / 技术中心'], canViewTable: staff, canHandle: staff && opts.canHandle !== false, canAssign: staff && opts.canAssign !== false, canPublish: staff && opts.canPublish !== false, canManage: staff && opts.canManage !== false, canFollowUp: !!opts.canFollowUp, followupPending: !!opts.followupPending, publicationSkipped: false, originalData: { title: row.title, description: '希望能按设备编号查询维护历史，减少重复查找。' }, formFields: [{ value: 'title', label: '需求标题' }, { value: 'description', label: '需求说明' }], reason: '采纳，已安排实施。', completion: '', messages: opts.noReply ? [] : [{ id: 'reply-1', kind: 'REPLY', authorName: '测试经办人', content: '已完成初步评估，目前正在实施。', createTime: '2026-11-13 10:00:00' }], publication: null }
+  const collectOnly = !!opts.collectOnly
+  return { ...row, collectOnly, decision: opts.pendingDecision ? 'PENDING' : row.decision, department: opts.department || ['瑞玛电气 / 技术中心'], canViewTable: staff, canHandle: !collectOnly && staff && opts.canHandle !== false, canAssign: !collectOnly && staff && opts.canAssign !== false, canPublish: !collectOnly && staff && opts.canPublish !== false, canManage: staff && opts.canManage !== false, canFollowUp: !collectOnly && !!opts.canFollowUp, followupPending: !collectOnly && !!opts.followupPending, publicationSkipped: false, originalData: { title: row.title, description: '希望能按设备编号查询维护历史，减少重复查找。' }, formFields: [{ value: 'title', label: '需求标题' }, { value: 'description', label: '需求说明' }], reason: '采纳，已安排实施。', completion: '', messages: opts.noReply ? [] : [{ id: 'reply-1', kind: 'REPLY', authorName: '测试经办人', content: '已完成初步评估，目前正在实施。', createTime: '2026-11-13 10:00:00' }], publication: null }
 }
 async function mockApi(page, role = 'all', opts = {}) {
   detail = makeDetail(opts)
-  forms = formSeed.map(item => ({ ...item }))
-  calls = []
   options = opts
+  forms = formSeed.map(item => ({ ...item, collectOnly: !!opts.collectOnly }))
+  calls = []
   departmentGrants = [{ deptKey: 'D1', name: '技术部', memberCount: 3, canFill: false, canHandle: false, canManage: !opts.noDeptManager }]
   memberGrants = [{ userId: '30', name: '测试经办人', canFill: true, canHandle: true, canManage: true }]
   departments = departmentSeed.map(item => ({ ...item }))
@@ -214,6 +215,14 @@ async function mockApi(page, role = 'all', opts = {}) {
       calls.push({ type: 'deleteDemand', id, body: route.request().postDataJSON() })
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, data: null, msg: null }) })
     }
+    if (/^\/demand-api\/admin\/forms\/[^/]+$/.test(api) && route.request().method() === 'POST') {
+      const key = decodeURIComponent(api.split('/')[4])
+      const body = route.request().postDataJSON() || {}
+      calls.push({ type: 'configure', key, body })
+      const form = forms.find((item) => item.formKey === key)
+      if (form) Object.assign(form, body)
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, data: null, msg: null }) })
+    }
     let data = null
     if (api === '/demand-api/capabilities') data = { ...notices, admin: role === 'all' || role === 'assigned', global: role === 'all', handler: role !== 'ordinary', manage: role === 'all' || role === 'manager' || role === 'assigned' }
     else if (api === '/demand-api/forms') data = forms
@@ -223,17 +232,20 @@ async function mockApi(page, role = 'all', opts = {}) {
     else if (/^\/demand-api\/forms\//.test(api)) data = { managed: true, allowAnonymous: api.endsWith('/A') }
     else if (api === '/demand-api/requests') {
       const formKey = url.searchParams.get('formKey')
-      const aRows = [{ ...row, publicationPublished: !!options.publishedFirst, followupPending: !!options.followupPending }, { ...rowA2, decision: options.pendingSecond ? 'PENDING' : rowA2.decision }]
+      const collectOnly = !!options.collectOnly
+      calls.push({ type: 'listRequests', formKey, scope: url.searchParams.get('scope') })
+      const aRows = [{ ...row, collectOnly, publicationPublished: !!options.publishedFirst, followupPending: !!options.followupPending }, { ...rowA2, collectOnly, decision: options.pendingSecond ? 'PENDING' : rowA2.decision }]
       const rows = role === 'assigned'
         ? formKey === 'B' ? [] : aRows
-        : formKey === 'A' ? aRows : formKey === 'B' ? [rowB] : [...aRows, rowB]
+        : formKey === 'A' ? aRows : formKey === 'B' ? [{ ...rowB, collectOnly }] : [...aRows, { ...rowB, collectOnly }]
       data = { rows, total: rows.length }
     }
     else if (api === '/demand-api/requests/summary') {
       const scope = url.searchParams.get('scope')
       const canManage = role === 'all' || role === 'manager' || role === 'assigned'
-      const all = [{ formKey: 'A', formName: '信息化需求征集', total: 2, unread: 1, pending: 1, lastUpdate: '2026-11-13 09:00:00', canManage }, { formKey: 'B', formName: '设备改善需求征集', total: 1, unread: 0, pending: 1, lastUpdate: '2026-11-12 09:00:00', canManage }]
-      const pending = { ...all[0], unread: 0, pending: 2 }
+      const collectOnly = !!options.collectOnly
+      const all = [{ formKey: 'A', formName: '信息化需求征集', total: 2, unread: 1, pending: 1, lastUpdate: '2026-11-13 09:00:00', canManage, collectOnly }, { formKey: 'B', formName: '设备改善需求征集', total: 1, unread: 0, pending: 1, lastUpdate: '2026-11-12 09:00:00', canManage, collectOnly }]
+      const pending = { ...all[0], unread: 0, pending: 2, collectOnly }
       data = scope === 'pending' ? [pending] : role === 'assigned' ? [all[0]] : all
     }
     else if (api === '/demand-api/requests/demand-1') data = detail
@@ -1043,6 +1055,67 @@ test('detail action rows align right without overflow at 1024 and 320', async ({
 })
 
 // 品牌回归同时覆盖旧缓存与配置异步返回，防止标题恢复成旧名称。
+test('collect-only detail hides all handling and shows notice', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 }); await login(page); await mockApi(page, 'manager', { collectOnly: true })
+  await page.goto('/demand/pending'); await page.getByRole('button', { name: '进入信息化需求征集' }).click(); await page.getByRole('button', { name: '查看', exact: true }).first().click()
+  const drawer = page.locator('.demand-detail-drawer')
+  await expect(drawer.getByText('该收集单仅收集信息，无需回复、采纳或公示。', { exact: true })).toBeVisible()
+  await expect(drawer.getByText('只收集', { exact: true })).toBeVisible()
+  await expect(drawer.getByText('采纳，已安排实施。', { exact: true })).toHaveCount(0)
+  await expect(drawer.getByRole('heading', { name: '追问经办人' })).toHaveCount(0)
+  await expect(drawer.getByRole('heading', { name: '采纳与实施' })).toHaveCount(0)
+  await expect(drawer.getByRole('heading', { name: '经办分派' })).toHaveCount(0)
+  await expect(drawer.getByRole('heading', { name: '内部公示' })).toHaveCount(0)
+  await expect(drawer.getByRole('button', { name: '发布回复' })).toHaveCount(0)
+  await expect(drawer.getByRole('button', { name: '发布处理结果' })).toHaveCount(0)
+  await expect(drawer.getByRole('button', { name: '审核并发布公示' })).toHaveCount(0)
+})
+
+test('collect-only read reloads the pending list', async ({ page }) => {
+  await login(page); await mockApi(page, 'manager', { collectOnly: true })
+  await page.goto('/demand/pending'); await page.getByRole('button', { name: '进入信息化需求征集' }).click()
+  const before = calls.filter((c) => c.type === 'listRequests' && c.formKey === 'A').length
+  await page.getByRole('button', { name: '查看', exact: true }).first().click()
+  await expect.poll(() => calls.filter((c) => c.type === 'listRequests' && c.formKey === 'A').length).toBeGreaterThan(before)
+})
+
+test('collect-only pending hides batch controls and outcome filters', async ({ page }) => {
+  await login(page); await mockApi(page, 'manager', { collectOnly: true })
+  await page.goto('/demand/pending'); await page.getByRole('button', { name: '进入信息化需求征集' }).click()
+  await expect(page.getByPlaceholder('采纳结果')).toHaveCount(0)
+  await expect(page.getByPlaceholder('实施进度')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '批量分派' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '批量公示' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '批量更新结果' })).toHaveCount(0)
+  await expect(page.locator('.demand-list-desktop .request-title').filter({ hasText: '只收集' }).first()).toBeVisible()
+})
+
+test('admin collection config saves collect-only mode', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 }); await login(page); await mockApi(page)
+  await page.goto('/demand/admin'); await page.getByRole('button', { name: '收集配置' }).first().click()
+  const drawer = page.locator('.el-drawer').filter({ hasText: '只收集' })
+  const toggle = drawer.locator('.el-form-item').filter({ hasText: '只收集' }).locator('.el-switch')
+  await expect(toggle).toBeVisible(); await toggle.click()
+  await drawer.getByRole('button', { name: '保存配置' }).click()
+  await expect(page.getByText('配置已保存', { exact: true })).toBeVisible()
+  const saved = calls.find((c) => c.type === 'configure' && c.key === 'A')
+  expect(saved.body.collectOnly).toBe(true)
+})
+
+test('restricted collection shows only-collect tag and view action without fill', async ({ page }) => {
+  await login(page); await mockApi(page, 'all')
+  forms[0].collectOnly = true; forms[0].visibility = 'SELECTED'; forms[0].canFill = false
+  await page.goto('/demand/home')
+  const card = page.locator('.collection-grid .demand-card').filter({ hasText: '信息化需求征集' })
+  await expect(card.getByText('只收集', { exact: true })).toBeVisible()
+  await expect(card.getByText('指定人员', { exact: true })).toBeVisible()
+  await expect(card.getByRole('button', { name: '查看需求' })).toBeVisible()
+  await expect(card.getByRole('button', { name: '填写', exact: true })).toHaveCount(0)
+  await card.getByRole('button', { name: '查看需求' }).click()
+  await expect(page).toHaveURL(/\/demand\/pending$/)
+  await expect(page.getByRole('heading', { name: '待我处理', exact: true })).toBeVisible()
+})
+
 test('company branding replaces cached defaults and supports custom names', async ({ page }) => {
   await mockApi(page)
   await page.addInitScript(() => localStorage.setItem('systemConfig', JSON.stringify({systemName:'Tduck填鸭表单'})))

@@ -111,6 +111,8 @@
             }}</span>
           </div>
           <div class="demand-tags demand-card-tags">
+            <el-tag v-if="form.collectOnly" size="small" type="info">只收集</el-tag>
+            <el-tag v-if="form.visibility === 'SELECTED'" size="small" type="warning">指定人员</el-tag>
             <el-tag v-if="form.allowAnonymous" size="small" type="info">可匿名</el-tag>
           </div>
         </div>
@@ -119,9 +121,9 @@
             <el-button
               size="mini"
               class="demand-card-action is-primary"
-              :disabled="expired(form)"
-              @click="write(form)"
-              >填写</el-button
+              :disabled="canEnter(form) && expired(form)"
+              @click="enterForm(form)"
+              >{{ canEnter(form) ? '填写' : '查看需求' }}</el-button
             >
           </div>
         </div>
@@ -264,12 +266,22 @@ export default {
     login() {
       this.$router.push({ path: '/login/entry', query: { redirect: this.$route.fullPath } })
     },
+    canEnter(form) {
+      if (form.visibility === 'LOGIN') return true
+      return !!form.canFill
+    },
+    enterForm(form) {
+      if (this.canEnter(form)) {
+        if (!this.expired(form)) this.write(form)
+        return
+      }
+      this.$router.push('/demand/pending')
+    },
     write(form) {
       this.$router.push(`/s/${form.formKey}`)
     },
     openForm(form) {
-      if (this.expired(form)) return
-      this.write(form)
+      this.enterForm(form)
     }
   }
 }

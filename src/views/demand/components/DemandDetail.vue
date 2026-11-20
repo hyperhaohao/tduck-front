@@ -16,9 +16,20 @@
           <el-tag v-if="detail.submittedBy" size="mini" type="info">后台代录</el-tag>
         </p>
         <div class="demand-tags">
-          <el-tag>{{ decisions[detail.decision] }}</el-tag
-          ><el-tag v-if="detail.progress !== 'NONE'" type="info">{{ progresses[detail.progress] }}</el-tag>
+          <template v-if="detail.collectOnly">
+            <el-tag type="info">只收集</el-tag>
+          </template>
+          <template v-else>
+            <el-tag>{{ decisions[detail.decision] }}</el-tag
+            ><el-tag v-if="detail.progress !== 'NONE'" type="info">{{ progresses[detail.progress] }}</el-tag>
+          </template>
         </div>
+        <el-alert
+          v-if="detail.collectOnly"
+          title="该收集单仅收集信息，无需回复、采纳或公示。"
+          type="info"
+          :closable="false"
+        />
         <section class="original-fields">
           <div v-for="field in displayFields" :key="field.key" class="original-field">
             <span class="field-label">{{ field.label }}</span>
@@ -38,13 +49,13 @@
         </section>
         <section class="detail-feed">
           <el-alert
-            v-if="staff && detail.followupPending"
+            v-if="staff && detail.followupPending && !detail.collectOnly"
             class="followup-notice"
             title="填报者已追问，请发布正式回复"
             type="warning"
             :closable="false"
           />
-          <div v-if="detail.reason" class="outcome-summary">
+          <div v-if="detail.reason && !detail.collectOnly" class="outcome-summary">
             <strong>采纳说明</strong>
             <p class="demand-preline">{{ detail.reason }}</p>
             <template v-if="detail.completion"
@@ -70,10 +81,16 @@
             </el-timeline-item>
           </el-timeline>
           <p v-if="!feed.length" class="demand-muted">
-            {{ staff ? '暂无回复、备注或操作记录。' : '暂无正式回复或进度更新。' }}
+            {{
+              detail.collectOnly
+                ? '该收集单仅收集信息，暂无处理记录。'
+                : staff
+                ? '暂无回复、备注或操作记录。'
+                : '暂无正式回复或进度更新。'
+            }}
           </p>
         </section>
-        <section v-if="detail.canFollowUp" class="detail-section">
+        <section v-if="!detail.collectOnly && detail.canFollowUp" class="detail-section">
           <h3>追问经办人</h3>
           <p class="demand-muted">
             提交后会回到经办人的待我处理，经办人回复后可在「回复与进度」查看。
@@ -97,7 +114,7 @@
             :closable="false"
           />
         </section>
-        <section v-if="detail.canHandle" class="detail-section">
+        <section v-if="!detail.collectOnly && detail.canHandle" class="detail-section">
           <h3>{{ composerMode === 'note' ? '添加内部备注' : '回复填报者（选填）' }}</h3>
           <el-radio-group v-model="composerMode" size="small" class="composer-switch">
             <el-radio-button label="reply">正式回复（选填，填报者可见）</el-radio-button>
@@ -128,7 +145,7 @@
             >
           </div>
         </section>
-        <section v-if="detail.canAssign" class="detail-section">
+        <section v-if="!detail.collectOnly && detail.canAssign" class="detail-section">
           <h3>经办分派</h3>
           <div class="assign-controls">
             <el-select v-model="handlerId" placeholder="选择已授权经办人" filterable clearable
@@ -143,7 +160,7 @@
             <el-button :loading="saving" @click="saveAssign">保存分派</el-button>
           </div>
         </section>
-        <section v-if="detail.canHandle" class="detail-section">
+        <section v-if="!detail.collectOnly && detail.canHandle" class="detail-section">
           <h3>采纳与实施</h3>
           <el-form label-position="top"
             ><el-form-item label="采纳结果" required
@@ -179,7 +196,7 @@
             </div></el-form
           >
         </section>
-        <section v-if="detail.canPublish || detail.canAssign" class="detail-section">
+        <section v-if="!detail.collectOnly && (detail.canPublish || detail.canAssign)" class="detail-section">
           <h3>内部公示</h3>
           <el-alert
             v-if="detail.publicationSkipped && !publicationPublished"

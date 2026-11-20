@@ -38,9 +38,9 @@
           placeholder="搜索标题、编号或收集单"
           clearable
           @keyup.enter.native="search"
-        /><el-select v-model="query.decision" clearable placeholder="采纳结果"
+        /><el-select v-if="!selectedFormCollectOnly" v-model="query.decision" clearable placeholder="采纳结果"
           ><el-option v-for="(label, key) in decisions" :key="key" :label="label" :value="key" /></el-select
-        ><el-select v-model="query.progress" clearable placeholder="实施进度"
+        ><el-select v-if="!selectedFormCollectOnly" v-model="query.progress" clearable placeholder="实施进度"
           ><el-option
             v-for="(label, key) in implementationProgresses"
             :key="key"
@@ -79,11 +79,16 @@
           ><template slot-scope="s"
             ><div class="request-title" :title="s.row.title">
               {{ s.row.title }} <el-tag v-if="!pending && s.row.unread" type="danger" size="mini">未读</el-tag>
-              <el-tag v-if="s.row.publicationPublished" type="success" size="mini">已公示</el-tag>
-              <el-tag v-else-if="s.row.publicationArchived" type="info" size="mini">已归档</el-tag>
-              <el-tag v-else-if="s.row.publicationSkipped" type="info" size="mini">不公示</el-tag>
-              <el-tag v-else-if="pending && s.row.decision !== 'REJECTED' && s.row.progress !== 'COMPLETED'" type="warning" size="mini">待公示</el-tag>
-              <el-tag v-if="s.row.followupPending" type="warning" size="mini">追问</el-tag>
+              <template v-if="s.row.collectOnly">
+                <el-tag type="info" size="mini">只收集</el-tag>
+              </template>
+              <template v-else>
+                <el-tag v-if="s.row.publicationPublished" type="success" size="mini">已公示</el-tag>
+                <el-tag v-else-if="s.row.publicationArchived" type="info" size="mini">已归档</el-tag>
+                <el-tag v-else-if="s.row.publicationSkipped" type="info" size="mini">不公示</el-tag>
+                <el-tag v-else-if="pending && s.row.decision !== 'REJECTED' && s.row.progress !== 'COMPLETED'" type="warning" size="mini">待公示</el-tag>
+                <el-tag v-if="s.row.followupPending" type="warning" size="mini">追问</el-tag>
+              </template>
             </div>
             <small class="demand-muted request-meta" :title="meta(s.row)">{{ meta(s.row) }}</small></template
           ></el-table-column
@@ -96,10 +101,11 @@
         />
         <el-table-column label="采纳结果" width="76"
           ><template slot-scope="s"
-            ><el-tag :type="tag(s.row.decision)" size="small">{{ decisions[s.row.decision] }}</el-tag></template
+            ><el-tag v-if="s.row.collectOnly" type="info" size="small">只收集</el-tag
+            ><el-tag v-else :type="tag(s.row.decision)" size="small">{{ decisions[s.row.decision] }}</el-tag></template
           ></el-table-column
         ><el-table-column label="实施进度" width="72"
-          ><template slot-scope="s">{{ progresses[s.row.progress] }}</template></el-table-column
+          ><template slot-scope="s">{{ s.row.collectOnly ? '—' : progresses[s.row.progress] }}</template></el-table-column
         ><el-table-column label="提报时间" width="116"
           ><template slot-scope="s">{{ date(s.row.createTime) }}</template></el-table-column
         ><el-table-column label="回复时间" width="116"
@@ -128,12 +134,17 @@
               提报 {{ date(row.createTime) }}<span v-if="row.replyTime"> · 回复 {{ date(row.replyTime) }}</span>
             </p>
             <div class="demand-tags demand-card-tags">
-              <el-tag :type="tag(row.decision)" size="small">{{ decisions[row.decision] }}</el-tag
-              ><el-tag v-if="row.progress !== 'NONE'" type="info" size="small">{{ progresses[row.progress] }}</el-tag
-              ><el-tag v-if="row.publicationPublished" type="success" size="small">已公示</el-tag
-              ><el-tag v-else-if="row.publicationArchived" type="info" size="small">已归档</el-tag
-              ><el-tag v-else-if="row.publicationSkipped" type="info" size="small">不公示</el-tag
-              ><el-tag v-if="row.followupPending" type="warning" size="small">追问</el-tag>
+              <template v-if="row.collectOnly">
+                <el-tag type="info" size="small">只收集</el-tag>
+              </template>
+              <template v-else>
+                <el-tag :type="tag(row.decision)" size="small">{{ decisions[row.decision] }}</el-tag
+                ><el-tag v-if="row.progress !== 'NONE'" type="info" size="small">{{ progresses[row.progress] }}</el-tag
+                ><el-tag v-if="row.publicationPublished" type="success" size="small">已公示</el-tag
+                ><el-tag v-else-if="row.publicationArchived" type="info" size="small">已归档</el-tag
+                ><el-tag v-else-if="row.publicationSkipped" type="info" size="small">不公示</el-tag
+                ><el-tag v-if="row.followupPending" type="warning" size="small">追问</el-tag>
+              </template>
             </div>
           </div>
           <div class="demand-card-actions">
@@ -261,6 +272,7 @@ export default {
       selectedFormKey: '',
       selectedFormName: '',
       selectedFormManage: false,
+      selectedFormCollectOnly: false,
       submitRange: [],
       query: { keyword: '', decision: '', progress: '', formKey: '', handlerId: '', page: 1, size: 20 },
       mobile: window.innerWidth < 768,
@@ -303,6 +315,7 @@ export default {
         this.pending &&
         this.scope === 'pending' &&
         !!this.selectedFormKey &&
+        !this.selectedFormCollectOnly &&
         (demandState.global || demandState.manage || demandState.handler)
       )
     },
@@ -367,6 +380,7 @@ export default {
       this.selectedFormKey = item.formKey
       this.selectedFormName = this.plain(item.formName)
       this.selectedFormManage = !!item.canManage || demandState.global
+      this.selectedFormCollectOnly = !!item.collectOnly
       this.query.formKey = item.formKey
       this.query.page = 1
       this.load()
@@ -375,6 +389,7 @@ export default {
       this.selectedFormKey = ''
       this.selectedFormName = ''
       this.selectedFormManage = false
+      this.selectedFormCollectOnly = false
       this.query.formKey = ''
       this.query.page = 1
       this.resetBatch()
@@ -384,6 +399,7 @@ export default {
       this.selectedFormKey = ''
       this.selectedFormName = ''
       this.selectedFormManage = false
+      this.selectedFormCollectOnly = false
       this.query.formKey = ''
       this.query.page = 1
       this.resetBatch()
@@ -405,6 +421,10 @@ export default {
     readRow(id) {
       const row = this.rows.find((r) => r.id === id)
       if (row) row.unread = false
+      if (this.selectedFormCollectOnly) {
+        this.load()
+        this.loadForms()
+      }
     },
     open(row) {
       this.$refs.detail.open(row.id)

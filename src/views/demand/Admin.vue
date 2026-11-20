@@ -62,6 +62,8 @@
                 </div>
                 <div class="demand-tags demand-card-tags">
                   <el-tag v-if="form.voided" size="small" type="danger">已作废</el-tag>
+                  <el-tag v-if="form.collectOnly" size="small" type="info">只收集</el-tag>
+                  <el-tag v-if="form.visibility === 'SELECTED'" size="small" type="warning">指定人员</el-tag>
                   <el-tag v-if="form.allowAnonymous" size="small" type="info">可匿名</el-tag>
                 </div>
               </div>
@@ -147,11 +149,16 @@
                 ><template slot-scope="s"
                   ><div class="request-title" :title="s.row.title">
                     {{ s.row.title }}
-                    <el-tag v-if="s.row.publicationPublished" type="success" size="mini">已公示</el-tag>
-                    <el-tag v-else-if="s.row.publicationArchived" type="info" size="mini">已归档</el-tag>
-                    <el-tag v-else-if="s.row.publicationSkipped" type="info" size="mini">不公示</el-tag>
-                    <el-tag v-else-if="s.row.decision !== 'REJECTED' && s.row.progress !== 'COMPLETED'" type="warning" size="mini">待公示</el-tag>
-                    <el-tag v-if="s.row.followupPending" type="warning" size="mini">追问</el-tag>
+                    <template v-if="s.row.collectOnly">
+                      <el-tag type="info" size="mini">只收集</el-tag>
+                    </template>
+                    <template v-else>
+                      <el-tag v-if="s.row.publicationPublished" type="success" size="mini">已公示</el-tag>
+                      <el-tag v-else-if="s.row.publicationArchived" type="info" size="mini">已归档</el-tag>
+                      <el-tag v-else-if="s.row.publicationSkipped" type="info" size="mini">不公示</el-tag>
+                      <el-tag v-else-if="s.row.decision !== 'REJECTED' && s.row.progress !== 'COMPLETED'" type="warning" size="mini">待公示</el-tag>
+                      <el-tag v-if="s.row.followupPending" type="warning" size="mini">追问</el-tag>
+                    </template>
                   </div>
                   <small class="demand-muted request-meta" :title="tableMeta(s.row)">{{
                     tableMeta(s.row)
@@ -167,13 +174,13 @@
                 width="86"
                 class-name="nowrap-cell" /><el-table-column label="处理状态" width="110"
                 ><template slot-scope="s"
-                  >{{ decisions[s.row.decision] }} / {{ progresses[s.row.progress] }}</template
+                  >{{ s.row.collectOnly ? '只收集' : decisions[s.row.decision] + ' / ' + progresses[s.row.progress] }}</template
                 ></el-table-column
               ><el-table-column label="提报时间" width="122"
                 ><template slot-scope="s">{{ date(s.row.createTime) }}</template></el-table-column
               ><el-table-column label="操作" width="140"
                 ><template slot-scope="s"
-                  ><el-button type="text" @click.stop="openDetail(s.row)">分派 / 公示</el-button
+                  ><el-button type="text" @click.stop="openDetail(s.row)">{{ s.row.collectOnly ? '查看' : '分派 / 公示' }}</el-button
                   ><el-button
                     v-if="s.row.canManage"
                     type="text"
@@ -200,12 +207,17 @@
                   <p class="demand-card-line">{{ row.submitterName }} · {{ row.handlerName || '待分派' }}</p>
                   <p class="demand-card-time">提报 {{ date(row.createTime) }}</p>
                   <div class="demand-tags demand-card-tags">
-                    <el-tag size="small">{{ decisions[row.decision] }}</el-tag
-                    ><el-tag v-if="row.publicationPublished" type="success" size="small">已公示</el-tag
-                    ><el-tag v-else-if="row.publicationArchived" type="info" size="small">已归档</el-tag
-                    ><el-tag v-else-if="row.publicationSkipped" type="info" size="small">不公示</el-tag
-                    ><el-tag v-else type="warning" size="small">待公示</el-tag
-                    ><el-tag v-if="row.followupPending" type="warning" size="small">追问</el-tag>
+                    <template v-if="row.collectOnly">
+                      <el-tag size="small" type="info">只收集</el-tag>
+                    </template>
+                    <template v-else>
+                      <el-tag size="small">{{ decisions[row.decision] }}</el-tag
+                      ><el-tag v-if="row.publicationPublished" type="success" size="small">已公示</el-tag
+                      ><el-tag v-else-if="row.publicationArchived" type="info" size="small">已归档</el-tag
+                      ><el-tag v-else-if="row.publicationSkipped" type="info" size="small">不公示</el-tag
+                      ><el-tag v-else type="warning" size="small">待公示</el-tag
+                      ><el-tag v-if="row.followupPending" type="warning" size="small">追问</el-tag>
+                    </template>
                   </div>
                 </div>
                 <div class="demand-card-actions">
@@ -214,7 +226,7 @@
                       size="mini"
                       class="demand-card-action is-primary"
                       @click.stop="openDetail(row)"
-                      >分派 / 公示</el-button
+                      >{{ row.collectOnly ? '查看' : '分派 / 公示' }}</el-button
                     >
                     <el-button
                       v-if="row.canManage"
@@ -312,6 +324,9 @@
               ><el-radio label="LOGIN">全体登录用户</el-radio
               ><el-radio label="SELECTED">指定人员</el-radio></el-radio-group
             ></el-form-item
+          ><el-form-item label="只收集"
+            ><el-switch v-model="config.collectOnly" />
+            <p class="demand-muted">只收集信息，不进入回复、采纳和公示；未读时进入待我处理，已读后移出。</p></el-form-item
           ><el-form-item label="允许匿名填写"
             ><el-switch v-model="config.allowAnonymous" :disabled="config.visibility === 'SELECTED'" />
             <p class="demand-muted">默认登录填写；指定人员收集单不能开放匿名。</p></el-form-item
@@ -735,6 +750,7 @@ export default {
         await api.configureForm(r.data.formKey, {
           summary: this.createForm.description,
           visibility: 'LOGIN',
+          collectOnly: false,
           allowAnonymous: false,
           published: false
         })
@@ -762,6 +778,7 @@ export default {
       this.config = {
         summary: form.summary || '',
         visibility: form.visibility || 'LOGIN',
+        collectOnly: !!form.collectOnly,
         allowAnonymous: !!form.allowAnonymous,
         published: !!form.published,
         endTime: form.endTime ? String(form.endTime).replace('T', ' ').substring(0, 19) : null,
