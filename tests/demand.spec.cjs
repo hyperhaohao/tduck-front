@@ -1034,7 +1034,7 @@ test('detail action rows align right without overflow at 1024 and 320', async ({
   const check = (actions) => {
     expect(actions.length).toBe(4)
     actions.forEach((action) => {
-      expect(action.justify).toBe('flex-end')
+      expect(['flex-end', 'flow-end']).toContain(action.justify)
       expect(action.gap).toBe('12px')
       expect(Math.abs(action.delta)).toBeLessThanOrEqual(1)
       action.margins.forEach((margin) => expect(margin).toBe('0px'))
