@@ -245,7 +245,7 @@ async function mockApi(page, role = 'all', opts = {}) {
       const canManage = role === 'all' || role === 'manager' || role === 'assigned'
       const collectOnly = !!options.collectOnly
       const all = [{ formKey: 'A', formName: '信息化需求征集', total: 2, unread: 1, pending: 1, lastUpdate: '2026-11-13 09:00:00', canManage, collectOnly }, { formKey: 'B', formName: '设备改善需求征集', total: 1, unread: 0, pending: 1, lastUpdate: '2026-11-12 09:00:00', canManage, collectOnly }]
-      const pending = { ...all[0], unread: 0, pending: 2, collectOnly }
+      const pending = { ...all[0], unread: options.collectOnly ? 1 : 0, pending: 2, collectOnly }
       data = scope === 'pending' ? [pending] : role === 'assigned' ? [all[0]] : all
     }
     else if (api === '/demand-api/requests/demand-1') data = detail
@@ -1081,13 +1081,38 @@ test('collect-only read reloads the pending list', async ({ page }) => {
 
 test('collect-only pending hides batch controls and outcome filters', async ({ page }) => {
   await login(page); await mockApi(page, 'manager', { collectOnly: true })
-  await page.goto('/demand/pending'); await page.getByRole('button', { name: '进入信息化需求征集' }).click()
+  await page.goto('/demand/pending')
+  const overview = page.locator('.form-card').filter({ hasText: '信息化需求征集' })
+  await expect(overview.getByText('未读 1', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '进入信息化需求征集' }).click()
   await expect(page.getByPlaceholder('采纳结果')).toHaveCount(0)
   await expect(page.getByPlaceholder('实施进度')).toHaveCount(0)
   await expect(page.getByRole('button', { name: '批量分派' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '批量公示' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '批量更新结果' })).toHaveCount(0)
   await expect(page.locator('.demand-list-desktop .request-title').filter({ hasText: '只收集' }).first()).toBeVisible()
+  await expect(page.locator('.demand-list-desktop .request-title').filter({ hasText: '未读' }).first()).toBeVisible()
+})
+
+test('admin collect-only row shows unread and clears after read', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 }); await login(page); await mockApi(page, 'all', { collectOnly: true })
+  await page.goto('/demand/admin'); await page.getByText('需求总表与公示审核', { exact: true }).click(); await page.getByRole('button', { name: '进入信息化需求征集' }).click()
+  const row = page.locator('.demand-list-desktop tr').filter({ hasText: '优化设备维护记录查询' })
+  await expect(row.getByText('未读', { exact: true })).toBeVisible()
+  await expect(row.getByText('只收集', { exact: true }).first()).toBeVisible()
+  await row.getByRole('button', { name: '查看', exact: true }).click()
+  const drawer = page.locator('.demand-detail-drawer')
+  await expect(drawer.getByText('该收集单仅收集信息，无需回复、采纳或公示。', { exact: true })).toBeVisible()
+  await drawer.getByRole('button', { name: 'close 需求详情 · REQ-20261113-TEST001' }).click()
+  await expect(row.getByText('未读', { exact: true })).toHaveCount(0)
+})
+
+test('collect-only mobile pending shows unread tag', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 }); await login(page); await mockApi(page, 'manager', { collectOnly: true })
+  await page.goto('/demand/pending'); await page.getByRole('button', { name: '进入信息化需求征集' }).click()
+  const card = page.locator('.demand-list-mobile .demand-card').filter({ hasText: '优化设备维护记录查询' })
+  await expect(card.getByText('未读', { exact: true })).toBeVisible()
+  await expect(card.getByText('只收集', { exact: true })).toBeVisible()
 })
 
 test('admin collection config saves collect-only mode', async ({ page }) => {

@@ -149,6 +149,7 @@
                 ><template slot-scope="s"
                   ><div class="request-title" :title="s.row.title">
                     {{ s.row.title }}
+                    <el-tag v-if="s.row.collectOnly && s.row.unread" type="danger" size="mini">未读</el-tag>
                     <template v-if="s.row.collectOnly">
                       <el-tag type="info" size="mini">只收集</el-tag>
                     </template>
@@ -208,6 +209,7 @@
                   <p class="demand-card-time">提报 {{ date(row.createTime) }}</p>
                   <div class="demand-tags demand-card-tags">
                     <template v-if="row.collectOnly">
+                      <el-tag v-if="row.unread" size="small" type="danger">未读</el-tag>
                       <el-tag size="small" type="info">只收集</el-tag>
                     </template>
                     <template v-else>
@@ -507,7 +509,7 @@
         </div>
         <p class="demand-muted">原系统超级管理员和配置项管理员拥有全局权限，不在此列表内，也不受本列表撤权影响。</p></el-drawer
       >
-      <demand-detail ref="detail" @updated="afterTableUpdate" /></template
+      <demand-detail ref="detail" @read="readTableRow" @updated="afterTableUpdate" /></template
     ><el-result v-else icon="warning" title="无后台管理权限" sub-title="请使用具有管理权限的账户访问。" />
   </section>
 </template>
@@ -1271,6 +1273,10 @@ export default {
     afterTableUpdate() {
       if (this.selectedTableFormKey) this.loadTable()
       else this.loadTableForms()
+    },
+    readTableRow(id) {
+      const row = this.rows.find((item) => item.id === id)
+      if (row) row.unread = false
     },
     tableMeta(row) {
       return `${row.requestNo || ''} · ${this.plain(row.formName)}`

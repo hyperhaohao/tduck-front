@@ -78,7 +78,7 @@
         <el-table-column label="需求" :width="roomy ? 360 : null" min-width="120"
           ><template slot-scope="s"
             ><div class="request-title" :title="s.row.title">
-              {{ s.row.title }} <el-tag v-if="!pending && s.row.unread" type="danger" size="mini">未读</el-tag>
+              {{ s.row.title }} <el-tag v-if="s.row.unread && (!pending || s.row.collectOnly)" type="danger" size="mini">未读</el-tag>
               <template v-if="s.row.collectOnly">
                 <el-tag type="info" size="mini">只收集</el-tag>
               </template>
@@ -126,7 +126,7 @@
           <div class="demand-card-body">
             <div class="demand-card-title-row">
               <h3 class="demand-card-title">{{ row.title }}</h3>
-              <el-tag v-if="!pending && row.unread" type="danger" size="mini">未读</el-tag>
+              <el-tag v-if="row.unread && (!pending || row.collectOnly)" type="danger" size="mini">未读</el-tag>
             </div>
             <p class="demand-card-kicker">{{ row.requestNo }}</p>
             <p class="demand-card-line">{{ plain(row.formName) }} · {{ row.handlerName || '待分派' }}</p>
