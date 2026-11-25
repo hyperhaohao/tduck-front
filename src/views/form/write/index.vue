@@ -67,7 +67,11 @@
         >
         <template v-else
           ><p v-if="submitResult.demandReceipt.approvalPending">
-            已提交，等待部门主管审批；通过后进入单据处理流程。
+            {{
+              submitResult.demandReceipt.approvalMode === 'HIERARCHY'
+                ? '已提交，等待逐级审批；全部通过后进入单据处理流程。'
+                : '已提交，等待部门主管审批；通过后进入单据处理流程。'
+            }}
           </p>
           <p v-else>已加入“我的需求”，处理后的回复和进度将在其中显示。</p>
           <el-button type="primary" @click="openReceipt">查看我的需求</el-button></template

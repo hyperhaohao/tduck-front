@@ -96,22 +96,34 @@
           ></el-table-column
         >
         <el-table-column v-if="pending || approval" prop="submitterName" label="填报者" width="72" class-name="nowrap-cell" /><el-table-column
+          v-if="approval"
+          label="当前级"
+          width="150"
+          ><template slot-scope="s"
+            ><div class="request-title">{{ s.row.approvalDeptName || '部门主管' }}</div>
+            <small class="demand-muted"
+              >第{{ s.row.approvalStep || 1 }}级<template v-if="approverNames(s.row)">
+                · {{ approverNames(s.row) }}</template
+              ></small
+            ></template
+          ></el-table-column
+        ><el-table-column
+          v-if="!approval"
           prop="handlerName"
           label="经办人"
           width="82"
           class-name="nowrap-cell"
         />
-        <el-table-column label="采纳结果" width="76"
+        <el-table-column v-if="!approval" label="采纳结果" width="76"
           ><template slot-scope="s"
-            ><el-tag v-if="approval" type="warning" size="small">待审批</el-tag
-            ><el-tag v-else-if="s.row.collectOnly" type="info" size="small">只收集</el-tag
+            ><el-tag v-if="s.row.collectOnly" type="info" size="small">只收集</el-tag
             ><el-tag v-else :type="tag(s.row.decision)" size="small">{{ decisions[s.row.decision] }}</el-tag></template
           ></el-table-column
-        ><el-table-column label="实施进度" width="72"
+        ><el-table-column v-if="!approval" label="实施进度" width="72"
           ><template slot-scope="s">{{ s.row.collectOnly ? '—' : progresses[s.row.progress] }}</template></el-table-column
         ><el-table-column label="提报时间" width="116"
           ><template slot-scope="s">{{ date(s.row.createTime) }}</template></el-table-column
-        ><el-table-column label="回复时间" width="116"
+        ><el-table-column v-if="!approval" label="回复时间" width="116"
           ><template slot-scope="s">{{ date(s.row.replyTime) }}</template></el-table-column
         ><el-table-column v-if="wide" label="操作" width="64"
           ><template slot-scope="s"
@@ -132,7 +144,7 @@
               <el-tag v-if="row.unread && (!pending || row.collectOnly)" type="danger" size="mini">未读</el-tag>
             </div>
             <p class="demand-card-kicker">{{ row.requestNo }}</p>
-            <p class="demand-card-line">{{ plain(row.formName) }} · {{ approval ? '待部门主管审批' : row.handlerName || '待分派' }}</p>
+            <p class="demand-card-line">{{ plain(row.formName) }} · {{ approval ? approvalLine(row) : row.handlerName || '待分派' }}</p>
             <p class="demand-card-time">
               提报 {{ date(row.createTime) }}<span v-if="row.replyTime"> · 回复 {{ date(row.replyTime) }}</span>
             </p>
@@ -309,7 +321,7 @@ export default {
     },
     subtitle() {
       if (this.selectedFormKey) return '该收集单下的需求明细，可继续搜索或筛选。'
-      if (this.approval) return '按收集单查看等待本人审批的需求；通过后进入单据处理流程。'
+      if (this.approval) return '同一级任一主管通过即可；逐级审批全部通过后进入单据处理。'
       return this.pending
         ? '按收集单分类查看分派给本人的待办需求。'
         : '按收集单分类查看本人需求的正式回复、采纳结果与实施进度。'
@@ -469,6 +481,15 @@ export default {
     },
     meta(row) {
       return `${row.requestNo || ''} · ${this.plain(row.formName)}`
+    },
+    approvalLine(row) {
+      const step = `第${row.approvalStep || 1}级`
+      return row.approvalDeptName
+        ? `待审批 · ${step} · ${row.approvalDeptName}`
+        : `待审批 · ${step}`
+    },
+    approverNames(row) {
+      return (row.approvalApprovers || []).join('、')
     },
     exportExcel() {
       const prefix = this.scope === 'table' ? '需求总表' : this.pending ? '待我处理' : '我的需求'

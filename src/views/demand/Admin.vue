@@ -80,6 +80,13 @@
                   <el-tag v-if="form.collectOnly" size="small" type="info">只收集</el-tag>
                   <el-tag v-if="form.visibility === 'SELECTED'" size="small" type="warning">指定人员</el-tag>
                   <el-tag v-if="form.allowAnonymous" size="small" type="info">可匿名</el-tag>
+                  <el-tag v-if="form.approvalMode === 'HIERARCHY'" size="small" type="warning">逐级审批</el-tag>
+                  <el-tag
+                    v-else-if="form.approvalMode === 'DIRECT' || form.requiresLeaderApproval"
+                    size="small"
+                    type="info"
+                    >主管审批</el-tag
+                  >
                 </div>
               </div>
               <div class="demand-card-actions">
@@ -346,12 +353,16 @@
           ><el-form-item label="允许匿名填写"
             ><el-switch
               v-model="config.allowAnonymous"
-              :disabled="config.visibility === 'SELECTED' || config.requiresLeaderApproval" />
-            <p class="demand-muted">默认登录填写；指定人员收集单不能开放匿名。</p></el-form-item
-          ><el-form-item label="部门主管审批"
-            ><el-switch v-model="config.requiresLeaderApproval" @change="leaderApprovalChanged" />
+              :disabled="config.visibility === 'SELECTED' || config.approvalMode !== 'NONE'" />
+            <p class="demand-muted">默认登录填写；指定人员或开启审批的收集单不能开放匿名。</p></el-form-item
+          ><el-form-item label="审批方式"
+            ><el-radio-group v-model="config.approvalMode" @change="approvalModeChanged"
+              ><el-radio label="NONE">不审批</el-radio
+              ><el-radio label="DIRECT">直属主管审批</el-radio
+              ><el-radio label="HIERARCHY">逐级审批</el-radio></el-radio-group
+            >
             <p class="demand-muted">
-              开启后提交先到填报人部门主管审批，通过后进入单据处理；需先在用户管理页配置部门主管，匿名将自动关闭。
+              不审批：提交后直接进入单据处理。直属主管：只审批填报人直属部门，任一名主管通过即可。逐级审批：从填报人部门逐级向上，每级任一名主管通过；无主管的部门自动跳过。开启审批后匿名将自动关闭。
             </p></el-form-item
           ><el-form-item label="截止时间"
             ><el-date-picker
@@ -1068,13 +1079,14 @@ export default {
           : null,
         reminderMode: form.reminderMode || 'DEFAULT',
         requireMembers: !!form.requireMembers,
+        approvalMode: form.approvalMode || (form.requiresLeaderApproval ? 'DIRECT' : 'NONE'),
         requiresLeaderApproval: !!form.requiresLeaderApproval,
         revision: form.revision || 0
       }
       this.configVisible = true
     },
-    leaderApprovalChanged(value) {
-      if (value) this.config.allowAnonymous = false
+    approvalModeChanged(value) {
+      if (value !== 'NONE') this.config.allowAnonymous = false
     },
     visibilityChanged(value) {
       if (value === 'SELECTED') this.config.allowAnonymous = false
@@ -1082,7 +1094,10 @@ export default {
     async saveConfig() {
       this.saving = true
       try {
-        await api.configureForm(this.selected.formKey, this.config)
+        await api.configureForm(this.selected.formKey, {
+          ...this.config,
+          requiresLeaderApproval: this.config.approvalMode !== 'NONE'
+        })
         this.$message.success('配置已保存')
         this.configVisible = false
         await this.load()

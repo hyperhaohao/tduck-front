@@ -47,6 +47,9 @@
         <span class="notice-body">
           <span class="notice-title-line">
             <el-tag size="mini" :type="tagType(row.kind)">{{ kindLabels[row.kind] || row.kind }}</el-tag>
+            <el-tag v-if="row.kind === 'APPROVAL' && row.stepNo" size="mini" type="info"
+              >第{{ row.stepNo }}级</el-tag
+            >
             <span class="notice-title">{{ row.title }}</span>
             <span class="notice-time">{{ date(row.createTime) }}</span>
           </span>

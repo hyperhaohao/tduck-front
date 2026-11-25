@@ -49,8 +49,8 @@
           <template slot-scope="{ data }">
             <div class="org-tree-row">
               <span class="org-tree-name" :title="departmentLabel(data.deptKey)">{{ data.name }}</span>
-              <span v-if="data.leaderName" class="org-leader-tag" :title="'部门主管：' + data.leaderName"
-                >主管 {{ data.leaderName }}</span
+              <span v-if="leaderText(data)" class="org-leader-tag" :title="leaderTitle(data)"
+                >主管 {{ leaderText(data) }}</span
               >
               <span class="org-tree-count">{{ Number(data.memberCount || 0) }} 人</span>
               <span class="org-tree-actions" @click.stop>
@@ -72,8 +72,8 @@
       <section class="org-member-panel">
         <div class="org-panel-head">
           <strong>{{ memberPanelTitle }}</strong>
-          <span v-if="selectedDept && selectedDept.leaderName" class="demand-muted org-panel-path"
-            >主管：{{ selectedDept.leaderName }}</span
+          <span v-if="selectedDept && leaderText(selectedDept)" class="demand-muted org-panel-path"
+            >主管：{{ leaderText(selectedDept) }}</span
           >
           <span v-if="selectedDept" class="demand-muted org-panel-path">{{ departmentLabel(selectedDept.deptKey) }}</span>
         </div>
@@ -151,17 +151,21 @@
         /></el-form-item>
         <el-form-item label="部门主管">
           <el-select
-            v-model="deptForm.leaderId"
+            v-model="deptForm.leaderIds"
+            multiple
             filterable
             clearable
-            placeholder="选择本部门或下级部门成员"
+            collapse-tags
+            placeholder="可多选本部门或下级部门成员"
             style="width: 100%"
             ><el-option
-              v-for="member in leaderCandidates"
-              :key="member.userId"
+              v-for="member in leaderOptions"
+              :key="'leader-' + member.userId"
               :label="member.name"
               :value="member.userId" /></el-select>
-          <p class="demand-muted org-leader-tip">当前仅作标识，不自动授予权限；后续可用于部门领导审核。</p>
+          <p class="demand-muted org-leader-tip">
+            可多选；同一级任一人通过即可。逐级审批按部门层级向上，无主管的部门自动跳过。
+          </p>
         </el-form-item>
       </el-form>
       <span slot="footer"
@@ -210,7 +214,7 @@ export default {
       userKeyword: '',
       deptDialogVisible: false,
       deptSaving: false,
-      deptForm: { deptKey: '', name: '', parentKey: null, sortNo: 0, leaderId: null },
+      deptForm: { deptKey: '', name: '', parentKey: null, sortNo: 0, leaderIds: [] },
       userDialogVisible: false,
       userSaving: false,
       userForm: { userId: '', name: '', deptKeys: [] },
@@ -238,6 +242,9 @@ export default {
           memberCount: department.memberCount,
           leaderId: department.leaderId,
           leaderName: department.leaderName,
+          leaderIds: department.leaderIds || (department.leaderId ? [String(department.leaderId)] : []),
+          leaderNames: department.leaderNames || (department.leaderName ? [department.leaderName] : []),
+          leaders: department.leaders || [],
           children: []
         })
       })
@@ -278,9 +285,22 @@ export default {
       const users = new Map()
       this.roster.forEach((row) => {
         if (row.deptKey && keys.has(row.deptKey))
-          users.set(String(row.userId), { userId: row.userId, name: row.name })
+          users.set(String(row.userId), { userId: String(row.userId), name: row.name })
       })
       return [...users.values()].sort((a, b) => String(a.name).localeCompare(String(b.name), 'zh'))
+    },
+    leaderOptions() {
+      const options = [...this.leaderCandidates]
+      const names = new Map()
+      this.departments.forEach((department) => {
+        ;(department.leaders || []).forEach((leader) => names.set(String(leader.userId), leader.name))
+      })
+      ;(this.deptForm.leaderIds || []).forEach((userId) => {
+        const key = String(userId)
+        if (!options.some((option) => String(option.userId) === key))
+          options.push({ userId: key, name: names.get(key) || '成员' + key })
+      })
+      return options
     },
     currentMembers() {
       if (this.selectedDeptKey === '__none__') return this.roster.filter((row) => !row.deptKey)
@@ -308,9 +328,16 @@ export default {
         }
       })
       this.departments.forEach((department) => {
-        if (!department.leaderId) return
-        const user = users.get(String(department.leaderId))
-        if (user) user.leaderLabels.push(this.departmentLabel(department.deptKey))
+        const leaders = department.leaders || []
+        if (!leaders.length && !department.leaderId) return
+        const targets = leaders.length
+          ? leaders
+          : [{ userId: department.leaderId, name: department.leaderName }]
+        targets.forEach((leader) => {
+          const user = users.get(String(leader.userId))
+          if (user && !user.leaderLabels.includes(this.departmentLabel(department.deptKey)))
+            user.leaderLabels.push(this.departmentLabel(department.deptKey))
+        })
       })
       return [...users.values()].sort((a, b) => String(a.name).localeCompare(String(b.name), 'zh'))
     },
@@ -355,6 +382,22 @@ export default {
       }
       return names.join(' / ')
     },
+    leaderNames(department) {
+      if (!department) return []
+      if (Array.isArray(department.leaderNames) && department.leaderNames.length)
+        return department.leaderNames.filter(Boolean)
+      if (Array.isArray(department.leaders) && department.leaders.length)
+        return department.leaders.map((leader) => leader.name).filter(Boolean)
+      return department.leaderName ? [department.leaderName] : []
+    },
+    leaderText(department) {
+      const names = this.leaderNames(department)
+      if (!names.length) return ''
+      return names.length === 1 ? names[0] : names[0] + ' 等' + names.length + '人'
+    },
+    leaderTitle(department) {
+      return '部门主管：' + this.leaderNames(department).join('、')
+    },
     selectDept(data) {
       this.selectedDeptKey = data.deptKey
     },
@@ -364,7 +407,7 @@ export default {
         name: '',
         parentKey: parent ? parent.deptKey : this.selectedDept ? this.selectedDept.deptKey : null,
         sortNo: 0,
-        leaderId: null
+        leaderIds: []
       }
       this.deptDialogVisible = true
     },
@@ -374,7 +417,7 @@ export default {
         name: data.name,
         parentKey: data.parentKey || null,
         sortNo: Number(data.sortNo || 0),
-        leaderId: data.leaderId || null
+        leaderIds: (data.leaderIds || (data.leaderId ? [data.leaderId] : [])).map(String)
       }
       this.deptDialogVisible = true
     },
@@ -387,7 +430,8 @@ export default {
           name,
           parentKey: this.deptForm.parentKey || null,
           sortNo: this.deptForm.sortNo,
-          leaderId: this.deptForm.leaderId || null
+          leaderIds: (this.deptForm.leaderIds || []).map(String),
+          leaderId: (this.deptForm.leaderIds || [])[0] || null
         }
         if (this.deptForm.deptKey) {
           await api.updateDepartment(this.deptForm.deptKey, payload)

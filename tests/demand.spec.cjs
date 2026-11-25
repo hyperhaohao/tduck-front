@@ -85,7 +85,21 @@ let options = {}
 function makeDetail(opts = {}) {
   const staff = opts.canViewTable !== false
   const collectOnly = !!opts.collectOnly
-  return { ...row, collectOnly, decision: opts.pendingDecision ? 'PENDING' : row.decision, department: opts.department || ['瑞玛电气 / 技术中心'], canViewTable: staff, canHandle: !collectOnly && staff && opts.canHandle !== false, canAssign: !collectOnly && staff && opts.canAssign !== false, canPublish: !collectOnly && staff && opts.canPublish !== false, canManage: staff && opts.canManage !== false, canFollowUp: !collectOnly && !!opts.canFollowUp, followupPending: !collectOnly && !!opts.followupPending, publicationSkipped: false, approvalStatus: opts.approvalStatus || 'NONE', approvalLeaderName: opts.approvalLeaderName || null, approvalComment: opts.approvalComment || '', canApprove: !!opts.canApprove, originalData: { title: row.title, description: '希望能按设备编号查询维护历史，减少重复查找。' }, formFields: [{ value: 'title', label: '需求标题' }, { value: 'description', label: '需求说明' }], reason: '采纳，已安排实施。', completion: '', messages: opts.noReply ? [] : [{ id: 'reply-1', kind: 'REPLY', authorName: '测试经办人', content: '已完成初步评估，目前正在实施。', createTime: '2026-11-13 10:00:00' }], publication: null }
+  const approvalStatus = opts.approvalStatus || 'NONE'
+  const approvalMode = opts.approvalMode || (approvalStatus === 'PENDING' ? 'DIRECT' : 'NONE')
+  const approvalStep = opts.approvalStep || (approvalStatus === 'PENDING' ? 1 : 0)
+  const defaultSteps = approvalStatus === 'PENDING'
+    ? [{
+        stepNo: 1,
+        deptName: opts.approvalDeptName || '技术部',
+        status: 'PENDING',
+        comment: '',
+        actedByName: null,
+        actedAt: null,
+        approvers: [{ userId: '20', name: opts.approvalLeaderName || '人员20' }]
+      }]
+    : []
+  return { ...row, collectOnly, decision: opts.pendingDecision ? 'PENDING' : row.decision, department: opts.department || ['瑞玛电气 / 技术中心'], canViewTable: staff, canHandle: !collectOnly && staff && opts.canHandle !== false, canAssign: !collectOnly && staff && opts.canAssign !== false, canPublish: !collectOnly && staff && opts.canPublish !== false, canManage: staff && opts.canManage !== false, canFollowUp: !collectOnly && !!opts.canFollowUp, followupPending: !collectOnly && !!opts.followupPending, publicationSkipped: false, approvalStatus, approvalMode, approvalStep, approvalSteps: opts.approvalSteps || defaultSteps, approvalLeaderName: opts.approvalLeaderName || null, approvalComment: opts.approvalComment || '', canApprove: !!opts.canApprove, originalData: { title: row.title, description: '希望能按设备编号查询维护历史，减少重复查找。' }, formFields: [{ value: 'title', label: '需求标题' }, { value: 'description', label: '需求说明' }], reason: '采纳，已安排实施。', completion: '', messages: opts.noReply ? [] : [{ id: 'reply-1', kind: 'REPLY', authorName: '测试经办人', content: '已完成初步评估，目前正在实施。', createTime: '2026-11-13 10:00:00' }], publication: null }
 }
 async function mockApi(page, role = 'all', opts = {}) {
   detail = makeDetail(opts)
@@ -141,7 +155,9 @@ async function mockApi(page, role = 'all', opts = {}) {
     }
     if (api === '/demand-api/admin/departments' && route.request().method() === 'POST') {
       const body = route.request().postDataJSON()
-      const department = { deptKey: 'D' + (departments.length + 1), name: body.name, parentKey: body.parentKey || null, path: '/' + body.name, sortNo: body.sortNo || 0, memberCount: 0 }
+      const leaderIds = Array.isArray(body.leaderIds) ? body.leaderIds.map(String) : body.leaderId ? [String(body.leaderId)] : []
+      const leaders = leaderIds.map((userId) => ({ userId, name: departmentRoster.find((item) => String(item.userId) === userId)?.name || '成员' + userId }))
+      const department = { deptKey: 'D' + (departments.length + 1), name: body.name, parentKey: body.parentKey || null, path: '/' + body.name, sortNo: body.sortNo || 0, memberCount: 0, leaderIds, leaderNames: leaders.map((leader) => leader.name), leaders, leaderId: leaderIds[0] || null, leaderName: leaders[0]?.name || null }
       departments.push(department)
       calls.push({ type: 'createDepartment', body })
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, data: department, msg: null }) })
@@ -154,8 +170,18 @@ async function mockApi(page, role = 'all', opts = {}) {
         const department = departments.find((item) => item.deptKey === deptKey)
         if (department) {
           Object.assign(department, body)
-          const leader = departmentRoster.find((item) => String(item.userId) === String(body.leaderId))
-          department.leaderName = body.leaderId ? (leader ? leader.name : null) : null
+          const leaderIds = Array.isArray(body.leaderIds)
+            ? body.leaderIds.map(String)
+            : body.leaderId ? [String(body.leaderId)] : []
+          const leaders = leaderIds.map((userId) => ({
+            userId,
+            name: departmentRoster.find((item) => String(item.userId) === userId)?.name || '成员' + userId
+          }))
+          department.leaderIds = leaderIds
+          department.leaderNames = leaders.map((leader) => leader.name)
+          department.leaders = leaders
+          department.leaderId = leaderIds[0] || null
+          department.leaderName = leaders[0]?.name || null
         }
       } else {
         calls.push({ type: 'removeDepartment', deptKey })
@@ -194,9 +220,38 @@ async function mockApi(page, role = 'all', opts = {}) {
       const id = api.split('/')[3]
       const body = route.request().postDataJSON() || {}
       calls.push({ type: 'decideApproval', id, body })
-      detail.approvalStatus = body.decision === 'APPROVE' ? 'APPROVED' : 'REJECTED'
+      const steps = detail.approvalSteps || []
+      const current = steps.find((step) => Number(step.stepNo) === Number(detail.approvalStep) && step.status === 'PENDING')
+      if (body.decision === 'APPROVE') {
+        if (current) {
+          current.status = 'APPROVED'
+          current.comment = body.comment || ''
+          current.actedByName = detail.approvalLeaderName || '人员20'
+          current.actedAt = '2026-11-13 14:00:00'
+        }
+        const next = steps.find((step) => Number(step.stepNo) > Number(detail.approvalStep) && step.status === 'WAITING')
+        if (next) {
+          next.status = 'PENDING'
+          detail.approvalStatus = 'PENDING'
+          detail.approvalStep = next.stepNo
+          detail.canApprove = true
+          detail.approvalLeaderName = (next.approvers || []).map((approver) => approver.name).join('、')
+        } else {
+          detail.approvalStatus = 'APPROVED'
+          detail.canApprove = false
+        }
+      } else {
+        if (current) {
+          current.status = 'REJECTED'
+          current.comment = body.comment || ''
+          current.actedByName = detail.approvalLeaderName || '人员20'
+          current.actedAt = '2026-11-13 14:00:00'
+        }
+        steps.filter((step) => step.status === 'WAITING').forEach((step) => { step.status = 'SKIPPED' })
+        detail.approvalStatus = 'REJECTED'
+        detail.canApprove = false
+      }
       detail.approvalComment = body.comment || ''
-      detail.canApprove = false
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, data: null, msg: null }) })
     }
     if (/\/demand-api\/requests\/[^/]+\/assign$/.test(api)) {
@@ -386,7 +441,7 @@ async function mockApi(page, role = 'all', opts = {}) {
       const all = [{ formKey: 'A', formName: '信息化需求征集', total: 2, unread: 1, pending: 1, lastUpdate: '2026-11-13 09:00:00', canManage, collectOnly }, { formKey: 'B', formName: '设备改善需求征集', total: 1, unread: 0, pending: 1, lastUpdate: '2026-11-12 09:00:00', canManage, collectOnly }]
       const pending = { ...all[0], unread: options.collectOnly ? 1 : 0, pending: 2, collectOnly }
       data = scope === 'approval'
-        ? [{ ...all[0], total: 1, unread: 0, pending: 1, collectOnly: false }]
+        ? [{ ...all[0], total: 1, unread: 0, pending: 1, collectOnly: false, approvalStatus: 'PENDING', approvalMode: options.approvalMode || 'DIRECT', approvalStep: options.approvalStep || 1, approvalDeptName: options.approvalDeptName || '技术部', approvalApprovers: options.approvalApprovers || ['人员20'] }]
         : scope === 'pending' ? [pending] : role === 'assigned' ? [all[0]] : all
     }
     else if (api === '/demand-api/requests/demand-1') data = detail
@@ -1130,6 +1185,29 @@ test('user management page sets and shows department leader', async ({ page }) =
   await noOverflow(page)
 })
 
+test('department leaders support multiple selection and display', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 }); await login(page); await mockApi(page)
+  await page.goto('/demand/users'); await expect(page.getByRole('heading', { name: '用户管理' })).toBeVisible()
+  const panel = page.locator('.org-structure')
+  const deptRow = panel.locator('.org-tree-row').filter({ hasText: '技术部' }).first()
+  await deptRow.hover()
+  await deptRow.getByRole('button', { name: '编辑' }).click()
+  const dialog = page.locator('.el-dialog:visible')
+  const leaderSelect = dialog.locator('.el-form-item').filter({ hasText: '部门主管' }).locator('.el-select')
+  await leaderSelect.click()
+  const dropdown = page.locator('.el-select-dropdown:visible')
+  await dropdown.locator('.el-select-dropdown__item').filter({ hasText: '测试经办人' }).first().click()
+  await dropdown.locator('.el-select-dropdown__item').filter({ hasText: '新增成员' }).first().click()
+  await dialog.getByRole('button', { name: '保存' }).click()
+  await expect.poll(() => calls.find((call) => call.type === 'updateDepartment')).toBeTruthy()
+  const call = calls.find((item) => item.type === 'updateDepartment')
+  expect(call.body.leaderIds).toEqual(expect.arrayContaining(['30', '31']))
+  expect(call.body.leaderId).toBe('30')
+  await expect(panel.locator('.org-tree')).toContainText('主管 测试经办人 等2人')
+  await expect(panel.locator('.org-member-panel .org-panel-head')).toContainText('主管：测试经办人 等2人')
+  await noOverflow(page)
+})
+
 test('opening the designer does not inject the department field', async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 768 }); await login(page); await mockApi(page)
   await page.goto('/demand/admin'); await page.getByRole('button', { name: '设计与发布' }).first().click()
@@ -1508,17 +1586,65 @@ test('leader rejection requires a comment', async ({ page }) => {
   await expect(drawer.getByText('部门主管驳回：信息不足，请补充', { exact: true })).toBeVisible()
 })
 
+test('hierarchy approval advances level by level', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 }); await login(page)
+  const approvalSteps = [
+    { stepNo: 1, deptName: '技术中心 / 机械', status: 'PENDING', comment: '', actedByName: null, actedAt: null, approvers: [{ userId: '20', name: '吴开勇' }] },
+    { stepNo: 2, deptName: '技术中心', status: 'WAITING', comment: '', actedByName: null, actedAt: null, approvers: [{ userId: '21', name: '王东民' }] }
+  ]
+  await mockApi(page, 'all', { approver: true, approvalStatus: 'PENDING', approvalMode: 'HIERARCHY', approvalStep: 1, canApprove: true, canViewTable: false, approvalLeaderName: '吴开勇', approvalDeptName: '技术中心 / 机械', approvalSteps })
+  await page.goto('/demand/approvals')
+  await page.getByRole('button', { name: '进入信息化需求征集' }).click()
+  await page.getByRole('button', { name: '查看', exact: true }).first().click()
+  const drawer = page.locator('.demand-detail-drawer')
+  await expect(drawer.getByText('待审批：第1/2级 · 技术中心 / 机械（吴开勇）', { exact: true })).toBeVisible()
+  await expect(drawer.getByText('第1级 · 技术中心 / 机械', { exact: true })).toBeVisible()
+  await expect(drawer.getByText('未开始', { exact: true })).toBeVisible()
+  await drawer.getByPlaceholder('审批意见（驳回时必填）').fill('组内同意')
+  await drawer.getByRole('button', { name: '通过', exact: true }).click()
+  await expect(page.getByText('已通过审批', { exact: true })).toBeVisible()
+  await expect(drawer.getByText('待审批：第2/2级 · 技术中心（王东民）', { exact: true })).toBeVisible()
+  await expect(drawer.getByText('第2/2级审批 · 技术中心', { exact: true })).toBeVisible()
+  await drawer.getByPlaceholder('审批意见（驳回时必填）').fill('部门同意')
+  await drawer.getByRole('button', { name: '通过', exact: true }).click()
+  await expect(drawer.getByText('审批已通过（共2级）', { exact: true })).toBeVisible()
+  expect(calls.filter(c => c.type === 'decideApproval').length).toBe(2)
+  await noOverflow(page)
+})
+
+test('hierarchy rejection at a later level ends the demand', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 }); await login(page)
+  const approvalSteps = [
+    { stepNo: 1, deptName: '技术中心 / 机械', status: 'PENDING', comment: '', actedByName: null, actedAt: null, approvers: [{ userId: '20', name: '吴开勇' }] },
+    { stepNo: 2, deptName: '技术中心', status: 'WAITING', comment: '', actedByName: null, actedAt: null, approvers: [{ userId: '21', name: '王东民' }] },
+    { stepNo: 3, deptName: '瑞玛电气', status: 'WAITING', comment: '', actedByName: null, actedAt: null, approvers: [{ userId: '22', name: '马少卿' }] }
+  ]
+  await mockApi(page, 'all', { approver: true, approvalStatus: 'PENDING', approvalMode: 'HIERARCHY', approvalStep: 1, canApprove: true, canViewTable: false, approvalLeaderName: '吴开勇', approvalDeptName: '技术中心 / 机械', approvalSteps })
+  await page.goto('/demand/approvals')
+  await page.getByRole('button', { name: '进入信息化需求征集' }).click()
+  await page.getByRole('button', { name: '查看', exact: true }).first().click()
+  const drawer = page.locator('.demand-detail-drawer')
+  await drawer.getByPlaceholder('审批意见（驳回时必填）').fill('组内同意')
+  await drawer.getByRole('button', { name: '通过', exact: true }).click()
+  await expect(drawer.getByText('待审批：第2/3级 · 技术中心（王东民）', { exact: true })).toBeVisible()
+  await drawer.getByPlaceholder('审批意见（驳回时必填）').fill('信息不足，请补充')
+  await drawer.getByRole('button', { name: '驳回', exact: true }).click()
+  await expect(drawer.getByText('第2级（技术中心）驳回：信息不足，请补充', { exact: true })).toBeVisible()
+  await expect(drawer.getByText('已跳过', { exact: true })).toBeVisible()
+  await expect(drawer.getByRole('button', { name: '通过', exact: true })).toHaveCount(0)
+})
+
 test('admin enables leader approval and disables anonymous', async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 768 }); await login(page); await mockApi(page, 'all')
   await page.goto('/demand/admin'); await page.getByRole('button', { name: '收集配置' }).first().click()
-  const drawer = page.locator('.el-drawer').filter({ hasText: '部门主管审批' })
-  const approvalSwitch = drawer.locator('.el-form-item').filter({ hasText: '部门主管审批' }).locator('.el-switch')
-  await approvalSwitch.click()
+  const drawer = page.locator('.el-drawer').filter({ hasText: '审批方式' })
+  await drawer.locator('.el-radio').filter({ hasText: '直属主管审批' }).click()
   const anonymousSwitch = drawer.locator('.el-form-item').filter({ hasText: '允许匿名填写' }).locator('.el-switch')
   await expect(anonymousSwitch).toHaveClass(/is-disabled/)
   await drawer.getByRole('button', { name: '保存配置' }).click()
   await expect(page.getByText('配置已保存', { exact: true })).toBeVisible()
   const saved = calls.find(c => c.type === 'configure' && c.key === 'A')
+  expect(saved.body.approvalMode).toBe('DIRECT')
   expect(saved.body.requiresLeaderApproval).toBe(true)
   expect(saved.body.allowAnonymous).toBe(false)
 })

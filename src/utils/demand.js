@@ -50,6 +50,18 @@ export async function refreshDemand() {
   return demandState
 }
 export const decisions = { PENDING: '待评估', ACCEPTED: '采纳', DEFERRED: '暂缓', REJECTED: '不采纳' }
+export const approvalModes = {
+  NONE: '不审批',
+  DIRECT: '直属主管审批',
+  HIERARCHY: '逐级审批'
+}
+export const approvalStepStatuses = {
+  WAITING: '未开始',
+  PENDING: '待审批',
+  APPROVED: '已通过',
+  REJECTED: '已驳回',
+  SKIPPED: '已跳过'
+}
 export const outcomeDecisions = { ACCEPTED: '采纳', DEFERRED: '暂缓', REJECTED: '不采纳' }
 export const progresses = { NONE: '—', PLANNED: '待实施', IN_PROGRESS: '实施中', COMPLETED: '已完成' }
 export const badgeValue = (value) => Math.max(0, Number(value) || 0)

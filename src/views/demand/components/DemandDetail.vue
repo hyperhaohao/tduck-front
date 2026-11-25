@@ -32,19 +32,19 @@
         />
         <el-alert
           v-if="detail.approvalStatus === 'PENDING'"
-          :title="'待部门主管审批' + (detail.approvalLeaderName ? '：' + detail.approvalLeaderName : '')"
+          :title="approvalPendingTitle"
           type="warning"
           :closable="false"
         />
         <el-alert
           v-else-if="detail.approvalStatus === 'REJECTED'"
-          :title="'部门主管驳回：' + (detail.approvalComment || '未填写意见')"
+          :title="approvalRejectedTitle"
           type="error"
           :closable="false"
         />
         <el-alert
           v-else-if="detail.approvalStatus === 'APPROVED'"
-          title="部门主管已通过审批"
+          :title="approvalApprovedTitle"
           type="success"
           :closable="false"
         />
@@ -108,9 +108,48 @@
             }}
           </p>
         </section>
+        <section v-if="approvalSteps.length" class="detail-section approval-record-section">
+          <h3>审批记录</h3>
+          <div class="approval-step-list">
+            <div
+              v-for="step in approvalSteps"
+              :key="step.stepNo"
+              class="approval-step"
+              :class="{
+                'is-current':
+                  Number(step.stepNo) === Number(detail.approvalStep) &&
+                  step.status === 'PENDING'
+              }"
+            >
+              <div class="approval-step-head">
+                <strong>第{{ step.stepNo }}级 · {{ step.deptName }}</strong>
+                <el-tag size="mini" :type="approvalStepTag(step.status)">{{
+                  approvalStepLabels[step.status] || step.status
+                }}</el-tag>
+                <el-tag
+                  v-if="
+                    Number(step.stepNo) === Number(detail.approvalStep) &&
+                    step.status === 'PENDING'
+                  "
+                  size="mini"
+                  type="warning"
+                  >当前</el-tag
+                >
+              </div>
+              <p class="demand-muted">
+                主管：{{ approverNames(step) }}
+                <template v-if="step.actedByName"> · 处理人：{{ step.actedByName }}</template>
+              </p>
+              <p v-if="step.comment" class="demand-preline">意见：{{ step.comment }}</p>
+              <p v-if="step.actedAt" class="demand-muted">时间：{{ date(step.actedAt) }}</p>
+            </div>
+          </div>
+        </section>
         <section v-if="detail.canApprove" class="detail-section approval-section">
-          <h3>部门主管审批</h3>
-          <p class="demand-muted">通过后需求进入单据处理流程；驳回后需求结束并通知填报人。</p>
+          <h3>{{ approvalActionTitle }}</h3>
+          <p class="demand-muted">
+            同一级任一主管通过即可；通过后进入下一级，最后一级通过后进入单据处理；驳回后需求结束。
+          </p>
           <el-input
             v-model="approvalComment"
             type="textarea"
@@ -293,7 +332,7 @@ import {
   downloadAttachment,
   decideApproval
 } from '@/api/demand'
-import { decisions, progresses, implementationProgresses, outcomeDecisions } from '@/utils/demand'
+import { decisions, progresses, implementationProgresses, outcomeDecisions, approvalStepStatuses } from '@/utils/demand'
 export default {
   name: 'DemandDemandDetail',
   data() {
@@ -312,6 +351,7 @@ export default {
       replyText: '',
       followupText: '',
       approvalComment: '',
+      approvalStepLabels: approvalStepStatuses,
       result: {},
       publication: {},
       decisions,
@@ -323,6 +363,57 @@ export default {
   computed: {
     staff() {
       return this.detail && this.detail.canViewTable
+    },
+    approvalSteps() {
+      return (this.detail && this.detail.approvalSteps) || []
+    },
+    approvalStepTotal() {
+      return this.approvalSteps.length
+    },
+    currentApprovalStep() {
+      if (!this.detail) return null
+      return (
+        this.approvalSteps.find(
+          (step) => Number(step.stepNo) === Number(this.detail.approvalStep)
+        ) || null
+      )
+    },
+    approvalPendingTitle() {
+      const detail = this.detail || {}
+      if (detail.approvalMode !== 'HIERARCHY')
+        return '待部门主管审批' + (detail.approvalLeaderName ? '：' + detail.approvalLeaderName : '')
+      const step = this.currentApprovalStep
+      return (
+        `待审批：第${detail.approvalStep || 1}/${this.approvalStepTotal || 1}级` +
+        (step ? ' · ' + step.deptName : '') +
+        (detail.approvalLeaderName ? '（' + detail.approvalLeaderName + '）' : '')
+      )
+    },
+    approvalRejectedTitle() {
+      const detail = this.detail || {}
+      if (detail.approvalMode !== 'HIERARCHY')
+        return '部门主管驳回：' + (detail.approvalComment || '未填写意见')
+      const step = this.currentApprovalStep
+      return (
+        `第${detail.approvalStep || 1}级` +
+        (step ? '（' + step.deptName + '）' : '') +
+        '驳回：' +
+        (detail.approvalComment || '未填写意见')
+      )
+    },
+    approvalApprovedTitle() {
+      const detail = this.detail || {}
+      if (detail.approvalMode !== 'HIERARCHY') return '部门主管已通过审批'
+      return `审批已通过（共${this.approvalStepTotal || 1}级）`
+    },
+    approvalActionTitle() {
+      const detail = this.detail || {}
+      if (detail.approvalMode !== 'HIERARCHY') return '部门主管审批'
+      const step = this.currentApprovalStep
+      return (
+        `第${detail.approvalStep || 1}/${this.approvalStepTotal || 1}级审批` +
+        (step ? ' · ' + step.deptName : '')
+      )
     },
     publicationPublished() {
       return !!(this.detail && this.detail.publication && this.detail.publication.published)
@@ -503,6 +594,18 @@ export default {
         () => decideApproval(this.id, { decision, comment, revision: this.detail.revision }),
         decision === 'APPROVE' ? '已通过审批' : '已驳回'
       )
+    },
+    approvalStepTag(status) {
+      if (status === 'REJECTED') return 'danger'
+      if (status === 'APPROVED') return 'success'
+      if (status === 'PENDING') return 'warning'
+      return 'info'
+    },
+    approverNames(step) {
+      return (step.approvers || [])
+        .map((approver) => approver.name)
+        .filter(Boolean)
+        .join('、')
     },
     saveAssign() {
       return this.run(
@@ -695,6 +798,31 @@ export default {
 }
 .detail-section > .demand-muted {
   line-height: 1.7;
+}
+.approval-step-list {
+  display: grid;
+  gap: 12px;
+}
+.approval-step {
+  padding: 12px 14px;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  background: #fafbfc;
+}
+.approval-step.is-current {
+  border-color: #e6a23c;
+  background: #fdf6ec;
+}
+.approval-step-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.approval-step p {
+  margin: 4px 0 0;
+  line-height: 1.6;
 }
 @media (max-width: 767px) {
   .original-field {
