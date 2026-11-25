@@ -49,6 +49,9 @@
           <template slot-scope="{ data }">
             <div class="org-tree-row">
               <span class="org-tree-name" :title="departmentLabel(data.deptKey)">{{ data.name }}</span>
+              <span v-if="data.leaderName" class="org-leader-tag" :title="'部门主管：' + data.leaderName"
+                >主管 {{ data.leaderName }}</span
+              >
               <span class="org-tree-count">{{ Number(data.memberCount || 0) }} 人</span>
               <span class="org-tree-actions" @click.stop>
                 <el-button type="text" size="mini" @click="openCreate(data)">添加下级</el-button>
@@ -69,6 +72,9 @@
       <section class="org-member-panel">
         <div class="org-panel-head">
           <strong>{{ memberPanelTitle }}</strong>
+          <span v-if="selectedDept && selectedDept.leaderName" class="demand-muted org-panel-path"
+            >主管：{{ selectedDept.leaderName }}</span
+          >
           <span v-if="selectedDept" class="demand-muted org-panel-path">{{ departmentLabel(selectedDept.deptKey) }}</span>
         </div>
         <div v-if="selectedDept" class="org-add-member">
@@ -111,6 +117,9 @@
           <el-button type="text" size="mini" @click="openUser(user)">编辑部门</el-button>
         </div>
         <div class="org-user-depts">
+          <el-tag v-for="label in user.leaderLabels" :key="'leader-' + label" size="small" type="warning"
+            >主管 · {{ label }}</el-tag
+          >
           <el-tag v-for="label in user.deptLabels" :key="label" size="small">{{ label }}</el-tag>
           <span v-if="!user.deptLabels.length" class="demand-muted">未分配部门</span>
         </div>
@@ -140,6 +149,20 @@
         <el-form-item label="排序"
           ><el-input-number v-model="deptForm.sortNo" :min="0" :max="9999"
         /></el-form-item>
+        <el-form-item label="部门主管">
+          <el-select
+            v-model="deptForm.leaderId"
+            filterable
+            clearable
+            placeholder="选择本部门或下级部门成员"
+            style="width: 100%"
+            ><el-option
+              v-for="member in leaderCandidates"
+              :key="member.userId"
+              :label="member.name"
+              :value="member.userId" /></el-select>
+          <p class="demand-muted org-leader-tip">当前仅作标识，不自动授予权限；后续可用于部门领导审核。</p>
+        </el-form-item>
       </el-form>
       <span slot="footer"
         ><el-button @click="deptDialogVisible = false">取消</el-button
@@ -187,7 +210,7 @@ export default {
       userKeyword: '',
       deptDialogVisible: false,
       deptSaving: false,
-      deptForm: { deptKey: '', name: '', parentKey: null, sortNo: 0 },
+      deptForm: { deptKey: '', name: '', parentKey: null, sortNo: 0, leaderId: null },
       userDialogVisible: false,
       userSaving: false,
       userForm: { userId: '', name: '', deptKeys: [] },
@@ -213,6 +236,8 @@ export default {
           parentKey: department.parentKey,
           sortNo: department.sortNo,
           memberCount: department.memberCount,
+          leaderId: department.leaderId,
+          leaderName: department.leaderName,
           children: []
         })
       })
@@ -236,6 +261,27 @@ export default {
     selectedDept() {
       return this.departments.find((department) => department.deptKey === this.selectedDeptKey) || null
     },
+    leaderCandidates() {
+      const key = this.deptForm.deptKey
+      if (!key) return []
+      const current = this.departments.find((department) => department.deptKey === key)
+      if (!current) return []
+      const keys = new Set(
+        this.departments
+          .filter(
+            (department) =>
+              department.path === current.path ||
+              String(department.path || '').startsWith(current.path + '/')
+          )
+          .map((department) => department.deptKey)
+      )
+      const users = new Map()
+      this.roster.forEach((row) => {
+        if (row.deptKey && keys.has(row.deptKey))
+          users.set(String(row.userId), { userId: row.userId, name: row.name })
+      })
+      return [...users.values()].sort((a, b) => String(a.name).localeCompare(String(b.name), 'zh'))
+    },
     currentMembers() {
       if (this.selectedDeptKey === '__none__') return this.roster.filter((row) => !row.deptKey)
       if (!this.selectedDeptKey) return []
@@ -252,13 +298,19 @@ export default {
       const users = new Map()
       this.roster.forEach((row) => {
         const userId = String(row.userId)
-        if (!users.has(userId)) users.set(userId, { userId, name: row.name, deptKeys: [], deptLabels: [] })
+        if (!users.has(userId))
+          users.set(userId, { userId, name: row.name, deptKeys: [], deptLabels: [], leaderLabels: [] })
         if (row.deptKey) {
           const user = users.get(userId)
           user.deptKeys.push(row.deptKey)
           const label = this.departmentLabel(row.deptKey)
           if (!user.deptLabels.includes(label)) user.deptLabels.push(label)
         }
+      })
+      this.departments.forEach((department) => {
+        if (!department.leaderId) return
+        const user = users.get(String(department.leaderId))
+        if (user) user.leaderLabels.push(this.departmentLabel(department.deptKey))
       })
       return [...users.values()].sort((a, b) => String(a.name).localeCompare(String(b.name), 'zh'))
     },
@@ -311,7 +363,8 @@ export default {
         deptKey: '',
         name: '',
         parentKey: parent ? parent.deptKey : this.selectedDept ? this.selectedDept.deptKey : null,
-        sortNo: 0
+        sortNo: 0,
+        leaderId: null
       }
       this.deptDialogVisible = true
     },
@@ -320,7 +373,8 @@ export default {
         deptKey: data.deptKey,
         name: data.name,
         parentKey: data.parentKey || null,
-        sortNo: Number(data.sortNo || 0)
+        sortNo: Number(data.sortNo || 0),
+        leaderId: data.leaderId || null
       }
       this.deptDialogVisible = true
     },
@@ -329,7 +383,12 @@ export default {
       if (!name) return this.$message.warning('请输入部门名称')
       this.deptSaving = true
       try {
-        const payload = { name, parentKey: this.deptForm.parentKey || null, sortNo: this.deptForm.sortNo }
+        const payload = {
+          name,
+          parentKey: this.deptForm.parentKey || null,
+          sortNo: this.deptForm.sortNo,
+          leaderId: this.deptForm.leaderId || null
+        }
         if (this.deptForm.deptKey) {
           await api.updateDepartment(this.deptForm.deptKey, payload)
           this.$message.success('部门已保存')
@@ -465,6 +524,24 @@ export default {
 .org-tree-count {
   flex: 0 0 auto;
   color: #8f959e;
+  font-size: 12px;
+}
+.org-leader-tag {
+  flex: 0 0 auto;
+  max-width: 120px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: #b88230;
+  background: #fdf6ec;
+  border: 1px solid #faecd8;
+  border-radius: 10px;
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 18px;
+}
+.org-leader-tip {
+  margin: 4px 0 0;
   font-size: 12px;
 }
 .org-tree-actions {

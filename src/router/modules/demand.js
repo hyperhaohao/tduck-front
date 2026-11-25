@@ -22,8 +22,15 @@ export default [
         meta: { requireLogin: true, title: '需求公示' }
       },
       {
+        path: 'manage',
+        component: () => import('@/views/demand/Admin'),
+        props: { mode: 'manage' },
+        meta: { requireLogin: true, title: '单据管理' }
+      },
+      {
         path: 'admin',
         component: () => import('@/views/demand/Admin'),
+        props: { mode: 'admin' },
         meta: { requireLogin: true, title: '后台管理' }
       },
       {

@@ -52,19 +52,30 @@ router.beforeEach(async (to, from, next) => {
   )
   const formDataPath = /^\/project\/form\/(data|statistics)(\/|$)/.test(to.path)
   const consolePath = /^\/project\/form(\/|$)/.test(to.path) && !formDataPath && !publicProject
+  const userManagePath = /^\/manage\/user(\/|$)/.test(to.path)
+  const demandAdminPath = /^\/demand\/admin(\/|$)/.test(to.path)
+  const demandManagePath = /^\/demand\/manage(\/|$)/.test(to.path)
   const globalPath =
-    /^\/(home|manage)(\/|$)/.test(to.path) ||
+    (/^\/(home|manage)(\/|$)/.test(to.path) && !userManagePath) ||
     (/^\/project\//.test(to.path) && !publicProject && !consolePath)
-  if ((consolePath || globalPath) && store.getters['user/isLogin']) {
+  if ((consolePath || globalPath || userManagePath || demandAdminPath || demandManagePath) && store.getters['user/isLogin']) {
     try {
       const permissions = await refreshDemand()
-      if (
-        permissions.enabled &&
-        (globalPath ? !permissions.global : !permissions.admin)
-      ) {
-        next('/demand/home')
-        NProgress.done()
-        return
+      if (permissions.enabled) {
+        const denied = userManagePath
+          ? !permissions.userManage && !permissions.global
+          : globalPath
+            ? !permissions.global
+            : consolePath
+              ? !permissions.formManage
+              : demandAdminPath
+                ? !permissions.global
+                : !permissions.documentAccess
+        if (denied) {
+          next('/demand/home')
+          NProgress.done()
+          return
+        }
       }
     } catch (e) {
       next('/demand/home')

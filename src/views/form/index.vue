@@ -145,7 +145,7 @@ export default {
       return !demandState.enabled || demandState.global
     },
     canUseAi() {
-      return !demandState.enabled || demandState.admin
+      return !demandState.enabled || demandState.formManage
     },
     visibleMenuItems() {
       if (this.isGlobal) return this.menuItemList
@@ -157,7 +157,7 @@ export default {
   created() {
     this.projectKey = this.$route.query.key
     this.defaultActiveMenu = this.$route.path
-    if (this.$route.query.ai === '1') {
+    if (this.$route.query.ai === '1' && this.canUseAi) {
       this.$nextTick(() => {
         this.aiDrawerVisible = true
       })

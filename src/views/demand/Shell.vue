@@ -71,8 +71,14 @@
                   class="nav-count"
                   title="未读公示数" /></span
             ></el-menu-item>
-            <el-menu-item v-if="logged && state.admin" index="/demand/admin"
+            <el-menu-item v-if="logged && state.documentAccess && !state.global" index="/demand/manage"
+              ><i class="el-icon-folder-checked" /><span slot="title">单据管理</span></el-menu-item
+            >
+            <el-menu-item v-if="logged && state.global" index="/demand/admin"
               ><i class="el-icon-setting" /><span slot="title">后台管理</span></el-menu-item
+            >
+            <el-menu-item v-if="logged && state.userManage" index="/manage/user"
+              ><i class="el-icon-user" /><span slot="title">用户管理</span></el-menu-item
             >
             <el-menu-item index="/demand/lookup"
               ><i class="el-icon-search" /><span slot="title">匿名需求查询</span></el-menu-item
@@ -201,6 +207,12 @@ export default {
       await this.$store.dispatch('user/logout')
       Object.assign(this.state, {
         admin: false,
+        documentAccess: false,
+        formManage: false,
+        org: false,
+        userManage: false,
+        permissionApi: false,
+        granted: [],
         global: false,
         handler: false,
         manage: false,

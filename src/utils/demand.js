@@ -4,6 +4,12 @@ import { capabilities } from '@/api/demand'
 export const demandState = Vue.observable({
   enabled: false,
   admin: false,
+  documentAccess: false,
+  formManage: false,
+  org: false,
+  userManage: false,
+  permissionApi: false,
+  granted: [],
   global: false,
   handler: false,
   manage: false,
@@ -13,19 +19,28 @@ export const demandState = Vue.observable({
 })
 export async function refreshDemand() {
   const response = await capabilities()
-  Object.assign(
-    demandState,
-    {
-      mineUnread: 0,
-      pending: 0,
-      publicationUnread: 0,
-      admin: false,
-      global: false,
-      handler: false,
-      manage: false
-    },
-    response.data
-  )
+  const data = response.data || {}
+  // 旧后端没有新字段时回退到原 admin 语义，保证前端可先行部署。
+  const documentAccess =
+    data.documentAccess === undefined ? !!data.admin : !!data.documentAccess
+  const formManage = data.formManage === undefined ? documentAccess : !!data.formManage
+  const org = data.org === undefined ? documentAccess : !!data.org
+  Object.assign(demandState, {
+    enabled: !!data.enabled,
+    admin: documentAccess,
+    documentAccess,
+    formManage,
+    org,
+    userManage: !!data.userManage,
+    permissionApi: !!data.permissionApi,
+    granted: Array.isArray(data.granted) ? data.granted : [],
+    global: !!data.global,
+    handler: !!data.handler,
+    manage: !!data.manage,
+    mineUnread: data.mineUnread || 0,
+    pending: data.pending || 0,
+    publicationUnread: data.publicationUnread || 0
+  })
   return demandState
 }
 export const decisions = { PENDING: '待评估', ACCEPTED: '采纳', DEFERRED: '暂缓', REJECTED: '不采纳' }

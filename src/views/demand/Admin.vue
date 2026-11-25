@@ -3,17 +3,27 @@
     <template v-if="allowed"
       ><div class="demand-title-row">
         <div>
-          <h1>后台管理</h1>
-          <p class="demand-subtitle">后台管理员创建收集单、设置权限、分派经办并审核公示；仅显示本人创建或获授权的收集单。</p>
+          <h1>{{ mode === 'admin' ? '后台管理' : '单据管理' }}</h1>
+          <p class="demand-subtitle">
+            {{
+              mode === 'admin'
+                ? '全局管理员查看全部收集单、组织架构与需求总表，并维护平台权限。'
+                : '管理本人创建或获授权的收集单：处理需求、维护成员与配置。新建与设计发布需平台“单据管理”能力。'
+            }}
+          </p>
         </div>
         <div class="admin-actions">
-          <el-button v-if="isGlobal" @click="openRecycle">全局回收站</el-button
-          ><el-button v-if="isGlobal" @click="openRoles">后台管理员授权</el-button
-          ><el-button type="primary" icon="el-icon-plus" @click="createVisible = true">新建收集单</el-button>
+          <el-button v-if="isGlobal && mode === 'admin'" @click="openRecycle">全局回收站</el-button
+          ><el-button v-if="isGlobal && mode === 'admin'" @click="openRoles">{{
+            permissionApi ? '平台权限授权' : '后台管理员授权'
+          }}</el-button
+          ><el-button v-if="canCreate" type="primary" icon="el-icon-plus" @click="createVisible = true"
+            >新建收集单</el-button
+          >
         </div>
       </div>
       <el-tabs v-model="tab"
-        ><el-tab-pane label="收集单管理" name="forms"
+        ><el-tab-pane v-if="canDocument" label="收集单管理" name="forms"
           ><div class="demand-toolbar">
             <div class="demand-pill-group" role="group" aria-label="按状态筛选收集单">
               <button
@@ -29,7 +39,7 @@
             </div>
             <div class="demand-toolbar-end">
               <el-input v-model="keyword" placeholder="搜索收集单" clearable prefix-icon="el-icon-search" />
-              <el-button v-if="isGlobal" @click="$router.push('/project/my')">原表单后台</el-button>
+              <el-button v-if="isGlobal && mode === 'admin'" @click="$router.push('/project/my')">原表单后台</el-button>
             </div>
           </div>
           <div class="admin-form-list demand-card-grid">
@@ -42,7 +52,12 @@
               <demand-card-cover label="需求收集" />
               <div class="demand-card-body">
                 <div class="demand-card-title-row">
-                  <h3 class="demand-card-title" :title="plain(form.name)" @click="editOriginal(form)">
+                  <h3
+                    class="demand-card-title"
+                    :class="{ 'is-clickable': canCreate }"
+                    :title="plain(form.name)"
+                    @click="canCreate && editOriginal(form)"
+                  >
                     {{ plain(form.name) }}
                   </h3>
                 </div>
@@ -69,15 +84,16 @@
               </div>
               <div class="demand-card-actions">
                 <div class="demand-card-actions-main">
-                  <el-button size="mini" class="demand-card-action is-primary" @click="editOriginal(form)"
+                  <el-button v-if="canCreate" size="mini" class="demand-card-action is-primary" @click="editOriginal(form)"
                     >设计与发布</el-button
-                  ><el-button size="mini" class="demand-card-action is-secondary" @click="openConfig(form)"
+                  ><el-button v-if="form.canManage" size="mini" class="demand-card-action is-secondary" @click="openConfig(form)"
                     >收集配置</el-button
-                  ><el-button size="mini" class="demand-card-action is-secondary" @click="openMembers(form)"
+                  ><el-button v-if="form.canManage" size="mini" class="demand-card-action is-secondary" @click="openMembers(form)"
                     >成员权限</el-button
                   >
                 </div>
                 <el-dropdown
+                  v-if="form.canManage"
                   class="demand-card-more"
                   trigger="click"
                   placement="bottom-end"
@@ -103,7 +119,7 @@
             </article>
           </div>
           <el-empty v-if="!filtered.length" description="暂无收集单，请先新建" /></el-tab-pane
-        ><el-tab-pane label="需求总表与公示审核" name="table"
+        ><el-tab-pane v-if="canDocument" label="需求总表与公示审核" name="table"
           ><template v-if="!selectedTableFormKey">
             <div class="demand-toolbar">
               <el-input
@@ -252,7 +268,7 @@
               @current-change="loadTable"
             />
           </template></el-tab-pane
-      ><el-tab-pane label="组织架构" name="org" lazy
+      ><el-tab-pane v-if="canOrg" label="组织架构" name="org" lazy
         ><org-structure v-if="tab === 'org'" /></el-tab-pane
       ></el-tabs>
       <el-dialog title="新建需求收集单" :visible.sync="createVisible" :width="dialogWidth" :close-on-click-modal="false"
@@ -490,24 +506,81 @@
           </div></template
         ></el-drawer
       >
-      <el-drawer title="后台管理员授权" :visible.sync="rolesVisible" :size="drawerWidth" custom-class="demand-detail-drawer"
-        ><p class="demand-muted">后台管理员可进入后台并创建收集单；仅能看到本人创建或授予可管理的收集单，仍可按填报权限正常填报。</p>
-        <div class="member-picker">
-          <el-select
-            v-model="roleUserId"
-            filterable
-            remote
-            :remote-method="searchUsers"
-            placeholder="选择人员"
-            style="width: 100%"
-            ><el-option v-for="user in candidates" :key="user.id" :label="user.name" :value="user.id" /></el-select
-          ><el-button type="primary" :loading="saving" @click="grantRole">授予后台管理</el-button>
-        </div>
-        <div v-for="role in roleRows" :key="role.userId" class="member-row">
-          <strong>{{ role.name }}</strong
-          ><el-button type="text" :loading="saving" @click="revokeRole(role)">撤销后台管理</el-button>
-        </div>
-        <p class="demand-muted">原系统超级管理员和配置项管理员拥有全局权限，不在此列表内，也不受本列表撤权影响。</p></el-drawer
+      <el-drawer
+        :title="permissionApi ? '平台权限授权' : '后台管理员授权'"
+        :visible.sync="rolesVisible"
+        :size="drawerWidth"
+        custom-class="demand-detail-drawer"
+        ><template v-if="permissionApi">
+          <p class="demand-muted">
+            平台权限可独立授予：单据管理含新建收集单、设计发布与 AI 协作；单据级「管理」只能管理本单，不能建单。组织架构与用户管理需单独勾选。后台管理仅全局管理员可见。
+          </p>
+          <div class="member-picker">
+            <el-select
+              v-model="roleUserId"
+              filterable
+              remote
+              :remote-method="searchUsers"
+              placeholder="选择人员"
+              style="width: 100%"
+              ><el-option v-for="user in candidates" :key="user.id" :label="user.name" :value="user.id" /></el-select
+            ><el-button type="primary" :loading="saving" @click="addPermissionUser">添加人员</el-button>
+          </div>
+          <div class="permission-matrix">
+            <div class="permission-matrix-head">
+              <span>人员</span
+              ><span v-for="definition in permissionDefinitions" :key="definition.key" :title="definition.description">{{
+                definition.name
+              }}</span
+              ><span>操作</span>
+            </div>
+            <div v-for="row in permissionRows" :key="row.userId" class="permission-matrix-row">
+              <strong :title="row.name">{{ row.name }}</strong
+              ><span v-for="definition in permissionDefinitions" :key="definition.key" class="permission-cell">
+                <el-checkbox
+                  v-model="row.capabilities"
+                  :label="definition.key"
+                  :aria-label="definition.name"
+                  :title="definition.description"
+                />
+              </span>
+              <span class="permission-actions"
+                ><el-button type="text" size="mini" :loading="saving" @click="savePermissionRow(row)">保存</el-button
+                ><el-button type="text" size="mini" class="danger-text" :loading="saving" @click="revokePermissionRow(row)"
+                  >撤销</el-button
+                ></span
+              >
+            </div>
+            <el-empty v-if="!permissionRows.length" :image-size="60" description="暂无授权用户" />
+          </div>
+          <div class="permission-global-only">
+            <p class="demand-muted">全局管理员专属：</p>
+            <el-tag v-for="item in globalOnly" :key="item.key" size="small" type="info" :title="item.description">{{
+              item.name
+            }}</el-tag>
+          </div>
+          <p class="demand-muted">原系统超级管理员和配置项管理员拥有全局权限，不在此列表内。</p></template
+        ><template v-else
+          ><p class="demand-muted">
+            后台管理员可进入后台并创建收集单；仅能看到本人创建或授予可管理的收集单，仍可按填报权限正常填报。
+          </p>
+          <div class="member-picker">
+            <el-select
+              v-model="roleUserId"
+              filterable
+              remote
+              :remote-method="searchUsers"
+              placeholder="选择人员"
+              style="width: 100%"
+              ><el-option v-for="user in candidates" :key="user.id" :label="user.name" :value="user.id" /></el-select
+            ><el-button type="primary" :loading="saving" @click="grantRole">授予后台管理</el-button>
+          </div>
+          <div v-for="role in roleRows" :key="role.userId" class="member-row">
+            <strong>{{ role.name }}</strong
+            ><el-button type="text" :loading="saving" @click="revokeRole(role)">撤销后台管理</el-button>
+          </div>
+          <p class="demand-muted">原系统超级管理员和配置项管理员拥有全局权限，不在此列表内，也不受本列表撤权影响。</p></template
+        ></el-drawer
       >
       <demand-detail ref="detail" @read="readTableRow" @updated="afterTableUpdate" /></template
     ><el-result v-else icon="warning" title="无后台管理权限" sub-title="请使用具有管理权限的账户访问。" />
@@ -524,12 +597,22 @@ import OrgStructure from './components/OrgStructure'
 import exportMixin from './exportMixin'
 export default {
   name: 'DemandAdmin',
+  props: {
+    mode: { type: String, default: 'admin' }
+  },
   components: { DemandDetail, DemandCardCover, FormOverview, OrgStructure },
   mixins: [exportMixin],
   data() {
     return {
       allowed: false,
       isGlobal: false,
+      canCreate: false,
+      canOrg: false,
+      canDocument: false,
+      permissionApi: false,
+      permissionDefinitions: [],
+      globalOnly: [],
+      permissionRows: [],
       loading: false,
       saving: false,
       bulkSaving: false,
@@ -702,6 +785,12 @@ export default {
     tab(v) {
       if (v === 'table') this.loadTableView()
     },
+    canOrg(value) {
+      if (!value && this.tab === 'org') this.tab = 'forms'
+    },
+    canDocument(value) {
+      if (!value && this.tab !== 'forms') this.tab = 'forms'
+    },
     comboText(value) {
       this.applyComboFilter(value)
     },
@@ -716,8 +805,12 @@ export default {
     this.loading = true
     try {
       const permissions = await refreshDemand()
-      this.allowed = permissions.admin
-      this.isGlobal = permissions.global
+      this.isGlobal = !!permissions.global
+      this.canDocument = !!permissions.documentAccess || this.isGlobal
+      this.canCreate = !!permissions.formManage || this.isGlobal
+      this.canOrg = !!permissions.org || this.isGlobal
+      this.permissionApi = !!permissions.permissionApi
+      this.allowed = this.mode === 'admin' ? this.isGlobal : this.canDocument
       if (this.allowed) await this.load()
     } finally {
       this.loading = false
@@ -1184,9 +1277,75 @@ export default {
       }
     },
     async openRoles() {
-      this.roleRows = (await api.admins()).data
-      await this.searchUsers('')
       this.rolesVisible = true
+      if (this.permissionApi) {
+        await this.loadPermissionMatrix()
+      } else {
+        this.roleRows = (await api.admins()).data
+      }
+      await this.searchUsers('')
+    },
+    async loadPermissionMatrix() {
+      const response = await api.permissionMatrix()
+      const data = response.data || {}
+      this.permissionDefinitions = data.capabilities || []
+      this.globalOnly = data.globalOnly || []
+      this.permissionRows = (data.users || []).map((row) => ({
+        ...row,
+        capabilities: [...(row.capabilities || [])]
+      }))
+    },
+    async addPermissionUser() {
+      if (!this.roleUserId) return this.$message.warning('请选择人员')
+      const user = this.candidates.find((item) => String(item.id) === String(this.roleUserId))
+      if (!user) return this.$message.warning('请选择人员')
+      if (this.permissionRows.some((row) => String(row.userId) === String(user.id)))
+        return this.$message.warning('该人员已在授权列表')
+      this.permissionRows.push({
+        userId: String(user.id),
+        name: user.name,
+        capabilities: ['form.manage']
+      })
+      this.roleUserId = ''
+    },
+    async savePermissionRow(row) {
+      this.saving = true
+      try {
+        await api.savePermissions(row.userId, row.capabilities)
+        this.$message.success('平台权限已保存')
+        await this.loadPermissionMatrix()
+        await this.refreshPagePermissions()
+      } finally {
+        this.saving = false
+      }
+    },
+    async revokePermissionRow(row) {
+      try {
+        await this.$confirm(`确认撤销 ${row.name} 的全部平台权限？`, '撤销平台权限', {
+          type: 'warning'
+        })
+      } catch (e) {
+        return
+      }
+      this.saving = true
+      try {
+        await api.savePermissions(row.userId, [])
+        this.$message.success('平台权限已撤销')
+        await this.loadPermissionMatrix()
+        await this.refreshPagePermissions()
+      } finally {
+        this.saving = false
+      }
+    },
+    async refreshPagePermissions() {
+      const permissions = await refreshDemand()
+      this.isGlobal = !!permissions.global
+      this.canDocument = !!permissions.documentAccess || this.isGlobal
+      this.canCreate = !!permissions.formManage || this.isGlobal
+      this.canOrg = !!permissions.org || this.isGlobal
+      this.permissionApi = !!permissions.permissionApi
+      this.allowed = this.mode === 'admin' ? this.isGlobal : this.canDocument
+      if (!this.allowed) this.$router.replace('/demand/home')
     },
     async grantRole() {
       if (!this.roleUserId) return this.$message.warning('请选择人员')
@@ -1484,5 +1643,49 @@ export default {
     flex-direction: column;
     gap: 2px;
   }
+}
+.permission-matrix {
+  margin-top: 12px;
+  overflow-x: auto;
+}
+.permission-matrix-head,
+.permission-matrix-row {
+  display: grid;
+  grid-template-columns: 110px repeat(3, minmax(84px, 1fr)) 108px;
+  align-items: center;
+  gap: 8px;
+  min-width: 520px;
+  padding: 8px 4px;
+  border-bottom: 1px solid #ebeef5;
+}
+.permission-matrix-head {
+  color: #909399;
+  font-size: 12px;
+  font-weight: 600;
+}
+.permission-matrix-row strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.permission-cell {
+  display: flex;
+  justify-content: center;
+}
+.permission-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.permission-global-only {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 16px;
+}
+.permission-global-only .demand-muted {
+  width: 100%;
+  margin: 0;
 }
 </style>

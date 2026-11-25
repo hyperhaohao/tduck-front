@@ -1,6 +1,43 @@
 const { test, expect } = require('@playwright/test')
 const path = require('path')
 const notices = { enabled: true, admin: true, global: true, handler: true, manage: true, mineUnread: 2, pending: 5, publicationUnread: 3 }
+function capabilityResponse(role, opts = {}) {
+  const base = {
+    ...notices,
+    admin: false,
+    documentAccess: false,
+    formManage: false,
+    org: false,
+    userManage: false,
+    permissionApi: true,
+    granted: []
+  }
+  const roles = {
+    all: { admin: true, documentAccess: true, formManage: true, org: true, userManage: true, global: true, handler: true, manage: true },
+    assigned: { admin: true, documentAccess: true, formManage: true, org: false, userManage: false, global: false, handler: true, manage: true },
+    manager: { admin: true, documentAccess: true, formManage: false, org: false, userManage: false, global: false, handler: true, manage: true },
+    consoleOnly: { admin: true, documentAccess: true, formManage: false, org: false, userManage: false, global: false, handler: false, manage: false },
+    orgOnly: { admin: true, documentAccess: true, formManage: false, org: true, userManage: false, global: false, handler: false, manage: false },
+    userManageOnly: { admin: false, documentAccess: false, formManage: false, org: false, userManage: true, global: false, handler: false, manage: false },
+    ordinary: { admin: false, documentAccess: false, formManage: false, org: false, userManage: false, global: false, handler: false, manage: false }
+  }
+  const capabilities = { ...base, ...(roles[role] || roles.ordinary) }
+  if (opts.permissionApi === false) {
+    capabilities.permissionApi = false
+    capabilities.documentAccess = !!capabilities.admin
+    capabilities.formManage = capabilities.documentAccess
+    capabilities.org = capabilities.documentAccess
+    capabilities.userManage = false
+  }
+  capabilities.granted = capabilities.formManage
+    ? ['form.manage']
+    : capabilities.org
+      ? ['org']
+      : capabilities.userManage
+        ? ['user.manage']
+        : []
+  return capabilities
+}
 const formSeed = [
   { formKey: 'A', name: '信息化需求征集', summary: '征集业务系统优化、报表改进与工作流程建议。', status: 2, published: true, visibility: 'LOGIN', allowAnonymous: true, revision: 0, demandCount: 2, collectOnly: false, canFill: true, canHandle: true, canManage: true },
   { formKey: 'B', name: '设备改善需求征集', summary: '提交设备维护、现场改善和安全优化需求。', status: 2, published: true, visibility: 'LOGIN', allowAnonymous: false, revision: 0, demandCount: 0, collectOnly: false, canFill: true, canHandle: true, canManage: true }
@@ -29,6 +66,7 @@ let departments = []
 let departmentRoster = []
 let departmentGrants = []
 let memberGrants = []
+let permissionUsers = []
 const row = { id: 'demand-1', title: '优化设备维护记录查询', requestNo: 'REQ-20261113-TEST001', formKey: 'A', formName: '信息化需求征集', submitterName: '测试员工', handlerId: '30', handlerName: '测试经办人', decision: 'ACCEPTED', progress: 'IN_PROGRESS', unread: true, revision: 1, publicVersion: 3, createTime: '2026-11-13 09:00:00', replyTime: '2026-11-13 10:00:00', publicationPublished: false, publicationSkipped: false, publicationVersion: 0, canHandle: true, canManage: true, followupPending: false, collectOnly: false }
 const rowA2 = { ...row, id: 'demand-3', title: '新增报表导出字段', requestNo: 'REQ-20261113-TEST003', revision: 5, unread: false, formName: '信息化需求征集与设备改善需求联合征集（超长名称用于验证省略）' }
 const rowB = { ...row, id: 'demand-2', title: '车间照明改善', requestNo: 'REQ-20261113-TEST002', formKey: 'B', formName: '设备改善需求征集', unread: false }
@@ -47,6 +85,7 @@ async function mockApi(page, role = 'all', opts = {}) {
   calls = []
   departmentGrants = [{ deptKey: 'D1', name: '技术部', memberCount: 3, canFill: false, canHandle: false, canManage: !opts.noDeptManager }]
   memberGrants = [{ userId: '30', name: '测试经办人', canFill: true, canHandle: true, canManage: true }]
+  permissionUsers = (opts.permissionUsers || []).map((user) => ({ ...user, capabilities: [...(user.capabilities || [])] }))
   departments = departmentSeed.map(item => ({ ...item }))
   departmentRoster = departmentRosterSeed.map(item => ({ ...item }))
   const canManagePublications = role === 'all' || role === 'manager' || role === 'assigned'
@@ -56,7 +95,7 @@ async function mockApi(page, role = 'all', opts = {}) {
     if (url.hostname !== '127.0.0.1') return route.abort()
     if (!['xhr', 'fetch'].includes(route.request().resourceType())) return route.continue()
     const api = url.pathname.replace(/^\/tduck-api/, '')
-    if (!url.pathname.includes('tduck-api') && !api.startsWith('/demand-api/') && !api.startsWith('/auth/') && !api.startsWith('/user/')) return route.continue()
+    if (!url.pathname.includes('tduck-api') && !api.startsWith('/demand-api/') && !api.startsWith('/auth/') && !api.startsWith('/user/') && !api.startsWith('/mange/')) return route.continue()
     if (api === '/demand-api/export/requests' || api === '/demand-api/export/publications') {
       if (options.exportError) return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 400, msg: '导出数据超过上限' }) })
       return route.fulfill({ status: 200, headers: { 'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'content-disposition': "attachment; filename*=UTF-8''synthetic.xlsx" }, body: Buffer.from('synthetic-xlsx') })
@@ -74,7 +113,11 @@ async function mockApi(page, role = 'all', opts = {}) {
         const body = route.request().postDataJSON()
         calls.push({ type: 'updateDepartment', deptKey, body })
         const department = departments.find((item) => item.deptKey === deptKey)
-        if (department) Object.assign(department, body)
+        if (department) {
+          Object.assign(department, body)
+          const leader = departmentRoster.find((item) => String(item.userId) === String(body.leaderId))
+          department.leaderName = body.leaderId ? (leader ? leader.name : null) : null
+        }
       } else {
         calls.push({ type: 'removeDepartment', deptKey })
         departments = departments.filter((item) => item.deptKey !== deptKey)
@@ -224,9 +267,15 @@ async function mockApi(page, role = 'all', opts = {}) {
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, data: null, msg: null }) })
     }
     let data = null
-    if (api === '/demand-api/capabilities') data = { ...notices, admin: role === 'all' || role === 'assigned', global: role === 'all', handler: role !== 'ordinary', manage: role === 'all' || role === 'manager' || role === 'assigned' }
+    if (api === '/demand-api/capabilities') data = capabilityResponse(role, opts)
+    else if (api === '/mange/user/page') data = { records: [], total: 0, current: 1, size: 10 }
     else if (api === '/demand-api/forms') data = forms
-    else if (api === '/demand-api/admin/forms') data = (role === 'assigned' ? forms.filter((f) => f.formKey === 'A') : forms).map((f) => ({ ...f, voided: options.voidedKey === f.formKey }))
+    else if (api === '/demand-api/admin/forms') {
+      let visible = forms
+      if (role === 'assigned' || role === 'manager') visible = forms.filter((f) => f.formKey === 'A')
+      if (role === 'consoleOnly' || role === 'orgOnly' || role === 'userManageOnly') visible = []
+      data = visible.map((f) => ({ ...f, voided: options.voidedKey === f.formKey }))
+    }
     else if (api === '/demand-api/admin/forms/deleted') data = deletedForms
     else if (/^\/demand-api\/forms\/[^/]+\/handlers$/.test(api)) data = [{ userId: '30', name: '测试经办人' }]
     else if (/^\/demand-api\/forms\//.test(api)) data = { managed: true, allowAnonymous: api.endsWith('/A') }
@@ -255,6 +304,26 @@ async function mockApi(page, role = 'all', opts = {}) {
     else if (/^\/demand-api\/admin\/forms\/[^/]+\/department-members$/.test(api)) data = api.includes('/A/') ? departmentGrants : []
     else if (api === '/demand-api/admin/users') data = [{ id: '30', name: '测试经办人' }, { id: '31', name: '新增成员' }]
     else if (api === '/demand-api/admin/roles') data = []
+    else if (api === '/demand-api/admin/permissions' && route.request().method() === 'GET')
+      data = {
+        capabilities: [
+          { key: 'form.manage', name: '单据管理', description: '新建、设计发布与 AI；数据按收集单授权' },
+          { key: 'org', name: '组织架构', description: '部门、成员与部门主管' },
+          { key: 'user.manage', name: '用户管理', description: '用户资料维护，不含重置密码' }
+        ],
+        globalOnly: [{ key: 'admin.grant', name: '平台权限授权', description: '仅全局管理员' }],
+        users: permissionUsers
+      }
+    else if (/^\/demand-api\/admin\/permissions\/[^/]+$/.test(api) && route.request().method() === 'POST') {
+      const userId = decodeURIComponent(api.split('/')[4])
+      const body = route.request().postDataJSON() || {}
+      const existing = permissionUsers.find((user) => String(user.userId) === userId)
+      if (existing) existing.capabilities = [...(body.capabilities || [])]
+      else permissionUsers.push({ userId, name: '测试经办人', capabilities: [...(body.capabilities || [])] })
+      permissionUsers = permissionUsers.filter((user) => (user.capabilities || []).length)
+      calls.push({ type: 'savePermissions', userId, body })
+      data = null
+    }
     else if (api === '/demand-api/lookup') data = { ...detail, canViewTable: false, canHandle: false, canAssign: false, canPublish: false }
     else if (api === '/demand-api/publications') data = publicationRows.filter(row => !row.archived || row.canManage)
     else if (api === '/demand-api/publications/pub-1') data = { ...publicationRows.find(row => row.id === 'pub-1'), summary: '需求摘要', content: '已安排实施，完成后将更新进展。', canManage: publicationRows.some(row => row.formKey === 'A' && row.canManage) }
@@ -660,13 +729,15 @@ test('admin demand table groups by collection, drills down and returns', async (
   await page.screenshot({ path: 'test-results/admin-table-1024.png', fullPage: true, animations: 'disabled' })
 })
 
-test('assigned admin sees only manageable collections and no role grant', async ({ page }) => {
+test('assigned admin uses document management and no role grant', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 }); await login(page); await mockApi(page, 'assigned')
-  await page.goto('/demand/home'); await expect(page.getByText('后台管理', { exact: true })).toBeVisible()
-  await page.goto('/demand/admin'); await expect(page.getByRole('heading', { name: '后台管理' })).toBeVisible()
+  await page.goto('/demand/home'); await expect(page.getByText('单据管理', { exact: true })).toBeVisible(); await expect(page.getByText('后台管理', { exact: true })).toHaveCount(0)
+  await page.goto('/demand/manage'); await expect(page.getByRole('heading', { name: '单据管理' })).toBeVisible()
   await expect(page.getByRole('button', { name: '新建收集单' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '平台权限授权' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '后台管理员授权' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '原表单后台' })).toHaveCount(0)
+  await expect(page.getByRole('tab', { name: '组织架构' })).toHaveCount(0)
   await expect(page.locator('.admin-form-list .demand-card')).toHaveCount(1)
   await expect(page.locator('.admin-form-list')).toContainText('信息化需求征集')
   await expect(page.locator('.admin-form-list')).not.toContainText('设备改善需求征集')
@@ -678,6 +749,7 @@ test('assigned admin sees only manageable collections and no role grant', async 
   await page.getByRole('button', { name: '导出全部' }).click()
   await expect.poll(() => exportUrl).toContain('scope=managed')
   await expect.poll(() => exportUrl).not.toContain('scope=table')
+  await page.goto('/demand/admin'); await expect(page).toHaveURL(/\/demand\/home$/)
   await page.goto('/project/my'); await expect(page).toHaveURL(/\/demand\/home$/)
   await page.goto('/manage/user'); await expect(page).toHaveURL(/\/demand\/home$/)
   await page.goto('/project/form/data?key=A'); await expect(page).toHaveURL(/\/demand\/home$/)
@@ -691,6 +763,42 @@ test('assigned admin designer hides data and statistics', async ({ page }) => {
   await expect(menu.locator('.el-menu-item').filter({ hasText: '数据' })).toHaveCount(0)
   await expect(menu.locator('.el-menu-item').filter({ hasText: '统计' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '保存至模板中心' })).toHaveCount(0)
+})
+
+test('manager document management hides create design and org', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 }); await login(page); await mockApi(page, 'manager')
+  await page.goto('/demand/home'); await expect(page.getByText('单据管理', { exact: true })).toBeVisible(); await expect(page.getByText('后台管理', { exact: true })).toHaveCount(0)
+  await page.goto('/demand/manage'); await expect(page.getByRole('heading', { name: '单据管理' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '新建收集单' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '设计与发布' })).toHaveCount(0)
+  await expect(page.getByRole('tab', { name: '组织架构' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '收集配置' }).first()).toBeVisible()
+  await expect(page.getByRole('button', { name: '成员权限' }).first()).toBeVisible()
+})
+
+test('permission matrix toggles independent capabilities', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 }); await login(page)
+  await mockApi(page, 'all', { permissionUsers: [{ userId: '60', name: '授权人员', capabilities: ['form.manage'] }] })
+  await page.goto('/demand/admin'); await page.getByRole('button', { name: '平台权限授权' }).click()
+  const drawer = page.locator('.demand-detail-drawer').filter({ hasText: '平台权限授权' })
+  await expect(drawer.getByText('单据管理', { exact: true }).first()).toBeVisible()
+  await expect(drawer.getByText('组织架构', { exact: true }).first()).toBeVisible()
+  await expect(drawer.getByText('用户管理', { exact: true }).first()).toBeVisible()
+  const row = drawer.locator('.permission-matrix-row').filter({ hasText: '授权人员' })
+  const checks = row.locator('.el-checkbox')
+  await expect(checks.nth(0)).toHaveClass(/is-checked/)
+  await checks.nth(1).click()
+  await row.getByRole('button', { name: '保存' }).click()
+  await expect.poll(() => calls.filter(c => c.type === 'savePermissions').length).toBe(1)
+  expect(calls.filter(c => c.type === 'savePermissions')[0].body.capabilities).toEqual(['form.manage', 'org'])
+  await expect(row.locator('.el-checkbox').nth(1)).toHaveClass(/is-checked/)
+  await noOverflow(page)
+})
+
+test('user manage only shows user management menu and route', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 }); await login(page); await mockApi(page, 'userManageOnly')
+  await page.goto('/demand/home'); await expect(page.getByText('用户管理', { exact: true })).toBeVisible(); await expect(page.getByText('单据管理', { exact: true })).toHaveCount(0); await expect(page.getByText('后台管理', { exact: true })).toHaveCount(0)
+  await page.goto('/manage/user'); await expect(page).toHaveURL(/\/manage\/user$/)
 })
 
 test('manager sees pending menu and can skip publication in detail', async ({ page }) => {
@@ -910,6 +1018,24 @@ test('admin org structure maintains departments and user cards', async ({ page }
   await dialog.locator('.el-tree-node__content').filter({ hasText: '技术部' }).locator('.el-checkbox').click()
   await dialog.getByRole('button', { name: '保存' }).click()
   await expect.poll(() => calls.find((call) => call.type === 'setUserDepartments')).toBeTruthy()
+  await noOverflow(page)
+})
+
+test('admin sets and sees department leader', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 }); await login(page); await mockApi(page)
+  await page.goto('/demand/admin'); await page.getByRole('tab', { name: '组织架构' }).click()
+  const panel = page.locator('.org-structure')
+  const deptRow = panel.locator('.org-tree-row').filter({ hasText: '技术部' }).first()
+  await deptRow.hover()
+  await deptRow.getByRole('button', { name: '编辑' }).click()
+  const dialog = page.locator('.el-dialog:visible')
+  await dialog.locator('.el-select').first().click()
+  await page.locator('.el-select-dropdown:visible .el-select-dropdown__item').filter({ hasText: '测试经办人' }).first().click()
+  await dialog.getByRole('button', { name: '保存' }).click()
+  await expect.poll(() => calls.find((call) => call.type === 'updateDepartment')).toBeTruthy()
+  expect(calls.find((call) => call.type === 'updateDepartment').body.leaderId).toBe('30')
+  await expect(panel.locator('.org-tree')).toContainText('主管 测试经办人')
+  await expect(panel.locator('.org-member-panel .org-panel-head')).toContainText('主管：测试经办人')
   await noOverflow(page)
 })
 

@@ -83,6 +83,9 @@ export const importDepartments = (data) => request.post('/demand-api/admin/depar
 export const users = (keyword = '') => request.get('/demand-api/admin/users', { params: { keyword } })
 export const admins = () => request.get('/demand-api/admin/roles')
 export const saveAdmin = (id, grant) => request.post(`/demand-api/admin/roles/${id}`, { grant })
+export const permissionMatrix = () => request.get('/demand-api/admin/permissions')
+export const savePermissions = (id, capabilities) =>
+  request.post(`/demand-api/admin/permissions/${id}`, { capabilities })
 export const startLogin = (returnPath) => request.get('/auth/oidc/start', { params: { returnPath } })
 export const exchangeLogin = (ticket) => request.post('/auth/oidc/exchange', { ticket })
 export const downloadAttachment = (id, data) =>
