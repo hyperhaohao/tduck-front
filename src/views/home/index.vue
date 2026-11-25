@@ -108,12 +108,6 @@ export default {
           icon: 'fa-caret-square-o-up'
         },
         {
-          route: '/manage/user',
-          name: '用户管理',
-          icon: 'fa-user',
-          admin: true
-        },
-        {
           route: '/manage/system',
           name: '系统配置',
           icon: 'el-icon-s-tools',
@@ -159,21 +153,6 @@ export default {
   },
   created() {
     let user = this.getStore.getters['user/userInfo'] || {}
-    const isAdmin = user.admin
-    if (isAdmin) {
-      this.menuList.push(
-        {
-          route: '/manage/user',
-          name: '用户管理',
-          icon: 'fa-user'
-        },
-        {
-          route: '/manage/system',
-          name: '系统配置',
-          icon: 'fa-arrow-circle-up'
-        }
-      )
-    }
     if (!user) {
       this.$router.push({
         path: '/login',

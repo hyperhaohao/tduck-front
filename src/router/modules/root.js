@@ -54,7 +54,7 @@ export default [
       {
         path: 'user',
         meta: { requireLogin: true },
-        component: () => import(/* webpackChunkName: 'root' */ '@/views/manage/user')
+        redirect: '/demand/users'
       },
       {
         path: 'system',

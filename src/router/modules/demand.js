@@ -28,6 +28,11 @@ export default [
         meta: { requireLogin: true, title: '单据管理' }
       },
       {
+        path: 'users',
+        component: () => import('@/views/demand/Users'),
+        meta: { requireLogin: true, title: '用户管理' }
+      },
+      {
         path: 'admin',
         component: () => import('@/views/demand/Admin'),
         props: { mode: 'admin' },

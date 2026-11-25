@@ -7,7 +7,7 @@
           <p class="demand-subtitle">
             {{
               mode === 'admin'
-                ? '全局管理员查看全部收集单、组织架构与需求总表，并维护平台权限。'
+                ? '全局管理员查看全部收集单与需求总表，并维护平台权限；用户管理在侧栏单独进入。'
                 : '管理本人创建或获授权的收集单：处理需求、维护成员与配置。新建与设计发布需平台“单据管理”能力。'
             }}
           </p>
@@ -268,8 +268,6 @@
               @current-change="loadTable"
             />
           </template></el-tab-pane
-      ><el-tab-pane v-if="canOrg" label="组织架构" name="org" lazy
-        ><org-structure v-if="tab === 'org'" /></el-tab-pane
       ></el-tabs>
       <el-dialog title="新建需求收集单" :visible.sync="createVisible" :width="dialogWidth" :close-on-click-modal="false"
         ><el-form label-position="top"
@@ -513,7 +511,7 @@
         custom-class="demand-detail-drawer"
         ><template v-if="permissionApi">
           <p class="demand-muted">
-            平台权限可独立授予：单据管理含新建收集单、设计发布与 AI 协作；单据级「管理」只能管理本单，不能建单。组织架构与用户管理需单独勾选。后台管理仅全局管理员可见。
+            平台权限可独立授予：单据管理含新建收集单、设计发布与 AI 协作；用户管理（组织架构）维护部门、成员与部门主管。单据级「管理」只能管理本单，不能建单；原用户管理页已隐藏。后台管理仅全局管理员可见。
           </p>
           <div class="member-picker">
             <el-select
@@ -527,14 +525,14 @@
             ><el-button type="primary" :loading="saving" @click="addPermissionUser">添加人员</el-button>
           </div>
           <div class="permission-matrix">
-            <div class="permission-matrix-head">
+            <div class="permission-matrix-head" :style="permissionGridStyle">
               <span>人员</span
               ><span v-for="definition in permissionDefinitions" :key="definition.key" :title="definition.description">{{
                 definition.name
               }}</span
               ><span>操作</span>
             </div>
-            <div v-for="row in permissionRows" :key="row.userId" class="permission-matrix-row">
+            <div v-for="row in permissionRows" :key="row.userId" class="permission-matrix-row" :style="permissionGridStyle">
               <strong :title="row.name">{{ row.name }}</strong
               ><span v-for="definition in permissionDefinitions" :key="definition.key" class="permission-cell">
                 <el-checkbox
@@ -593,21 +591,19 @@ import { refreshDemand, decisions, progresses } from '@/utils/demand'
 import DemandDetail from './components/DemandDetail'
 import DemandCardCover from './components/DemandCardCover'
 import FormOverview from './components/FormOverview'
-import OrgStructure from './components/OrgStructure'
 import exportMixin from './exportMixin'
 export default {
   name: 'DemandAdmin',
   props: {
     mode: { type: String, default: 'admin' }
   },
-  components: { DemandDetail, DemandCardCover, FormOverview, OrgStructure },
+  components: { DemandDetail, DemandCardCover, FormOverview },
   mixins: [exportMixin],
   data() {
     return {
       allowed: false,
       isGlobal: false,
       canCreate: false,
-      canOrg: false,
       canDocument: false,
       permissionApi: false,
       permissionDefinitions: [],
@@ -678,6 +674,10 @@ export default {
     },
     drawerWidth() {
       return this.mobile ? '100%' : '560px'
+    },
+    permissionGridStyle() {
+      const count = Math.max(1, this.permissionDefinitions.length)
+      return { gridTemplateColumns: `110px repeat(${count}, minmax(84px, 1fr)) 108px` }
     },
     grantRows() {
       // 只拼接原对象引用，表格内的 v-model 才能直接改两套数组
@@ -785,9 +785,6 @@ export default {
     tab(v) {
       if (v === 'table') this.loadTableView()
     },
-    canOrg(value) {
-      if (!value && this.tab === 'org') this.tab = 'forms'
-    },
     canDocument(value) {
       if (!value && this.tab !== 'forms') this.tab = 'forms'
     },
@@ -808,7 +805,6 @@ export default {
       this.isGlobal = !!permissions.global
       this.canDocument = !!permissions.documentAccess || this.isGlobal
       this.canCreate = !!permissions.formManage || this.isGlobal
-      this.canOrg = !!permissions.org || this.isGlobal
       this.permissionApi = !!permissions.permissionApi
       this.allowed = this.mode === 'admin' ? this.isGlobal : this.canDocument
       if (this.allowed) await this.load()
@@ -1342,7 +1338,6 @@ export default {
       this.isGlobal = !!permissions.global
       this.canDocument = !!permissions.documentAccess || this.isGlobal
       this.canCreate = !!permissions.formManage || this.isGlobal
-      this.canOrg = !!permissions.org || this.isGlobal
       this.permissionApi = !!permissions.permissionApi
       this.allowed = this.mode === 'admin' ? this.isGlobal : this.canDocument
       if (!this.allowed) this.$router.replace('/demand/home')

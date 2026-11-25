@@ -308,8 +308,7 @@ async function mockApi(page, role = 'all', opts = {}) {
       data = {
         capabilities: [
           { key: 'form.manage', name: '单据管理', description: '新建、设计发布与 AI；数据按收集单授权' },
-          { key: 'org', name: '组织架构', description: '部门、成员与部门主管' },
-          { key: 'user.manage', name: '用户管理', description: '用户资料维护，不含重置密码' }
+          { key: 'org', name: '用户管理', description: '部门、成员与部门主管' }
         ],
         globalOnly: [{ key: 'admin.grant', name: '平台权限授权', description: '仅全局管理员' }],
         users: permissionUsers
@@ -782,7 +781,6 @@ test('permission matrix toggles independent capabilities', async ({ page }) => {
   await page.goto('/demand/admin'); await page.getByRole('button', { name: '平台权限授权' }).click()
   const drawer = page.locator('.demand-detail-drawer').filter({ hasText: '平台权限授权' })
   await expect(drawer.getByText('单据管理', { exact: true }).first()).toBeVisible()
-  await expect(drawer.getByText('组织架构', { exact: true }).first()).toBeVisible()
   await expect(drawer.getByText('用户管理', { exact: true }).first()).toBeVisible()
   const row = drawer.locator('.permission-matrix-row').filter({ hasText: '授权人员' })
   const checks = row.locator('.el-checkbox')
@@ -795,10 +793,11 @@ test('permission matrix toggles independent capabilities', async ({ page }) => {
   await noOverflow(page)
 })
 
-test('user manage only shows user management menu and route', async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 900 }); await login(page); await mockApi(page, 'userManageOnly')
-  await page.goto('/demand/home'); await expect(page.getByText('用户管理', { exact: true })).toBeVisible(); await expect(page.getByText('单据管理', { exact: true })).toHaveCount(0); await expect(page.getByText('后台管理', { exact: true })).toHaveCount(0)
-  await page.goto('/manage/user'); await expect(page).toHaveURL(/\/manage\/user$/)
+test('user manager uses the user management page and old route redirects', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 }); await login(page); await mockApi(page, 'orgOnly')
+  await page.goto('/demand/home'); await expect(page.getByText('用户管理', { exact: true })).toBeVisible(); await expect(page.getByText('后台管理', { exact: true })).toHaveCount(0)
+  await page.goto('/demand/users'); await expect(page.getByRole('heading', { name: '用户管理' })).toBeVisible()
+  await page.goto('/manage/user'); await expect(page).toHaveURL(/\/demand\/users$/); await expect(page.getByRole('heading', { name: '用户管理' })).toBeVisible()
 })
 
 test('manager sees pending menu and can skip publication in detail', async ({ page }) => {
@@ -999,9 +998,9 @@ test('collection card title opens the form', async ({ page }) => {
   await expect(page.getByText('填报方式')).toBeVisible()
 })
 
-test('admin org structure maintains departments and user cards', async ({ page }) => {
+test('user management page maintains departments and user cards', async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 768 }); await login(page); await mockApi(page)
-  await page.goto('/demand/admin'); await page.getByRole('tab', { name: '组织架构' }).click()
+  await page.goto('/demand/users'); await expect(page.getByRole('heading', { name: '用户管理' })).toBeVisible()
   const panel = page.locator('.org-structure')
   await expect(panel.locator('.org-tree')).toContainText('技术部')
   await expect(panel.locator('.org-tree')).toContainText('研发组')
@@ -1021,9 +1020,9 @@ test('admin org structure maintains departments and user cards', async ({ page }
   await noOverflow(page)
 })
 
-test('admin sets and sees department leader', async ({ page }) => {
+test('user management page sets and shows department leader', async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 768 }); await login(page); await mockApi(page)
-  await page.goto('/demand/admin'); await page.getByRole('tab', { name: '组织架构' }).click()
+  await page.goto('/demand/users'); await expect(page.getByRole('heading', { name: '用户管理' })).toBeVisible()
   const panel = page.locator('.org-structure')
   const deptRow = panel.locator('.org-tree-row').filter({ hasText: '技术部' }).first()
   await deptRow.hover()
