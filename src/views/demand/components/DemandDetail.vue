@@ -30,6 +30,24 @@
           type="info"
           :closable="false"
         />
+        <el-alert
+          v-if="detail.approvalStatus === 'PENDING'"
+          :title="'待部门主管审批' + (detail.approvalLeaderName ? '：' + detail.approvalLeaderName : '')"
+          type="warning"
+          :closable="false"
+        />
+        <el-alert
+          v-else-if="detail.approvalStatus === 'REJECTED'"
+          :title="'部门主管驳回：' + (detail.approvalComment || '未填写意见')"
+          type="error"
+          :closable="false"
+        />
+        <el-alert
+          v-else-if="detail.approvalStatus === 'APPROVED'"
+          title="部门主管已通过审批"
+          type="success"
+          :closable="false"
+        />
         <section class="original-fields">
           <div v-for="field in displayFields" :key="field.key" class="original-field">
             <span class="field-label">{{ field.label }}</span>
@@ -89,6 +107,22 @@
                 : '暂无正式回复或进度更新。'
             }}
           </p>
+        </section>
+        <section v-if="detail.canApprove" class="detail-section approval-section">
+          <h3>部门主管审批</h3>
+          <p class="demand-muted">通过后需求进入单据处理流程；驳回后需求结束并通知填报人。</p>
+          <el-input
+            v-model="approvalComment"
+            type="textarea"
+            :rows="3"
+            maxlength="2000"
+            show-word-limit
+            placeholder="审批意见（驳回时必填）"
+          />
+          <div class="detail-actions">
+            <el-button type="danger" plain :loading="saving" @click="saveApproval('REJECT')">驳回</el-button>
+            <el-button type="primary" :loading="saving" @click="saveApproval('APPROVE')">通过</el-button>
+          </div>
         </section>
         <section v-if="!detail.collectOnly && detail.canFollowUp" class="detail-section">
           <h3>追问经办人</h3>
@@ -256,7 +290,8 @@ import {
   markRead,
   publish,
   skipPublication,
-  downloadAttachment
+  downloadAttachment,
+  decideApproval
 } from '@/api/demand'
 import { decisions, progresses, implementationProgresses, outcomeDecisions } from '@/utils/demand'
 export default {
@@ -276,6 +311,7 @@ export default {
       handlerId: '',
       replyText: '',
       followupText: '',
+      approvalComment: '',
       result: {},
       publication: {},
       decisions,
@@ -385,6 +421,7 @@ export default {
       this.detail = null
       this.composerMode = 'reply'
       this.followupText = ''
+      this.approvalComment = ''
       this.visible = true
       await this.reload()
     },
@@ -457,6 +494,15 @@ export default {
       } finally {
         this.saving = false
       }
+    },
+    saveApproval(decision) {
+      const comment = (this.approvalComment || '').trim()
+      if (decision === 'REJECT' && !comment)
+        return this.$message.warning('驳回时请填写审批意见')
+      return this.run(
+        () => decideApproval(this.id, { decision, comment, revision: this.detail.revision }),
+        decision === 'APPROVE' ? '已通过审批' : '已驳回'
+      )
     },
     saveAssign() {
       return this.run(

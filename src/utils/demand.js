@@ -15,7 +15,10 @@ export const demandState = Vue.observable({
   manage: false,
   mineUnread: 0,
   pending: 0,
-  publicationUnread: 0
+  publicationUnread: 0,
+  noticeUnread: 0,
+  approvalPending: 0,
+  approver: false
 })
 export async function refreshDemand() {
   const response = await capabilities()
@@ -39,7 +42,10 @@ export async function refreshDemand() {
     manage: !!data.manage,
     mineUnread: data.mineUnread || 0,
     pending: data.pending || 0,
-    publicationUnread: data.publicationUnread || 0
+    publicationUnread: data.publicationUnread || 0,
+    noticeUnread: data.noticeUnread || 0,
+    approvalPending: data.approvalPending || 0,
+    approver: !!data.approver
   })
   return demandState
 }

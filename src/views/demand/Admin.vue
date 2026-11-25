@@ -344,8 +344,15 @@
             ><el-switch v-model="config.collectOnly" />
             <p class="demand-muted">只收集信息，不进入回复、采纳和公示；未读时进入待我处理，已读后移出。</p></el-form-item
           ><el-form-item label="允许匿名填写"
-            ><el-switch v-model="config.allowAnonymous" :disabled="config.visibility === 'SELECTED'" />
+            ><el-switch
+              v-model="config.allowAnonymous"
+              :disabled="config.visibility === 'SELECTED' || config.requiresLeaderApproval" />
             <p class="demand-muted">默认登录填写；指定人员收集单不能开放匿名。</p></el-form-item
+          ><el-form-item label="部门主管审批"
+            ><el-switch v-model="config.requiresLeaderApproval" @change="leaderApprovalChanged" />
+            <p class="demand-muted">
+              开启后提交先到填报人部门主管审批，通过后进入单据处理；需先在用户管理页配置部门主管，匿名将自动关闭。
+            </p></el-form-item
           ><el-form-item label="截止时间"
             ><el-date-picker
               v-model="config.endTime"
@@ -353,11 +360,163 @@
               value-format="yyyy-MM-dd HH:mm:ss"
               placeholder="不设置则长期有效"
               style="width: 100%" /></el-form-item
+          ><el-form-item label="轮次模式"
+            ><el-radio-group v-model="config.roundMode"
+              ><el-radio label="NONE">不启用</el-radio
+              ><el-radio label="SINGLE">单轮</el-radio
+              ><el-radio label="PERIODIC">周期</el-radio></el-radio-group
+            >
+            <p class="demand-muted">启用后可设置必填人；周期模式到期自动开下一轮。</p></el-form-item
+          ><el-form-item v-if="config.roundMode === 'PERIODIC'" label="轮次周期"
+            ><el-radio-group v-model="config.roundPeriod"
+              ><el-radio label="MONTH">每月</el-radio
+              ><el-radio label="QUARTER">每季</el-radio></el-radio-group
+            ></el-form-item
+          ><el-form-item v-if="config.roundMode !== 'NONE'" label="本轮截止期限"
+            ><el-date-picker
+              v-model="config.roundEndTime"
+              type="datetime"
+              value-format="yyyy-MM-dd HH:mm:ss"
+              placeholder="单轮必填；周期可留空按周期推算"
+              style="width: 100%" /></el-form-item
+          ><el-form-item v-if="config.roundMode !== 'NONE'" label="提醒方式"
+            ><el-radio-group v-model="config.reminderMode"
+              ><el-radio label="DEFAULT">截止前提醒</el-radio
+              ><el-radio label="STRONG">每日提醒</el-radio></el-radio-group
+            ></el-form-item
+          ><el-form-item v-if="config.roundMode !== 'NONE'" label="必填人"
+            ><el-button size="small" @click="openRequired">设置必填人与查看名单</el-button>
+            <p class="demand-muted">必填人须在本轮内提交；匿名提交不计入完成。请先保存轮次配置。</p></el-form-item
           ><el-form-item label="向首页开放"
             ><el-switch v-model="config.published" />
             <p class="demand-muted">须同时在原表单设计器的“发布”页发布，才会进入员工可见列表。</p></el-form-item
           ><el-button type="primary" :loading="saving" @click="saveConfig">保存配置</el-button></el-form
         ></el-drawer
+      >
+      <el-drawer
+        title="必填人设置"
+        :visible.sync="requiredVisible"
+        :size="drawerWidth"
+        custom-class="demand-detail-drawer"
+        ><template v-if="selected"
+          ><h3>{{ plain(selected.name) }}</h3>
+          <p class="demand-muted">
+            轮次：{{ roundModeText }}；本轮截止：{{ requiredEndText }}；提醒：{{
+              requiredData && requiredData.reminderMode === 'STRONG' ? '每日提醒' : '截止前提醒'
+            }}。调整轮次请先在「收集配置」保存。
+          </p>
+          <div class="member-combo">
+            <el-popover
+              ref="requiredPopover"
+              v-model="requiredComboVisible"
+              trigger="manual"
+              placement="bottom-start"
+              :width="requiredPanelWidth"
+              :visible-arrow="false"
+              popper-class="member-tree-popper"
+              @show="syncRequiredPanelWidth"
+            >
+              <div class="member-tree-panel" @keydown.esc.stop="requiredComboVisible = false">
+                <el-tree
+                  ref="requiredTree"
+                  class="member-tree"
+                  :data="comboTree"
+                  node-key="id"
+                  default-expand-all
+                  :indent="mobile ? 12 : 18"
+                  :filter-node-method="filterComboNode"
+                  empty-text="暂无部门或成员"
+                >
+                  <template slot-scope="{ data }"
+                    ><div class="member-tree-row" :class="['is-' + data.type]">
+                      <template v-if="data.type !== 'group'">
+                        <el-tag size="mini" :type="data.type === 'department' ? 'success' : 'info'">{{
+                          data.type === 'department' ? '部门' : '成员'
+                        }}</el-tag>
+                        <span class="member-tree-name" :title="comboNodeTitle(data)">{{ data.name }}</span>
+                        <span class="member-tree-hint">{{ requiredNodeHint(data) }}</span>
+                        <button
+                          type="button"
+                          class="member-tree-circle"
+                          :class="{ 'is-added': isRequiredAdded(data) }"
+                          :disabled="isRequiredAdded(data)"
+                          :aria-label="'添加' + data.name"
+                          @click.stop="addRequiredNode(data)"
+                        >
+                          <i v-if="isRequiredAdded(data)" class="el-icon-check" />
+                        </button>
+                      </template>
+                      <template v-else>
+                        <span class="member-tree-name">{{ data.name }}</span>
+                        <span class="member-tree-hint">{{ data.children.length }} 人</span>
+                      </template>
+                    </div></template
+                  >
+                </el-tree>
+              </div>
+              <el-input
+                slot="reference"
+                ref="requiredInput"
+                v-model="requiredComboText"
+                clearable
+                prefix-icon="el-icon-search"
+                placeholder="搜索部门或成员，点击圆圈添加"
+                @focus="openRequiredCombo"
+                @click.native="openRequiredCombo"
+                @keydown.esc.native.stop="requiredComboVisible = false"
+              />
+            </el-popover>
+            <p class="demand-muted member-combo-tip">部门默认包含下级部门；指定人员收集单会自动补填报权限。</p>
+          </div>
+          <el-checkbox v-model="requiredRequireMembers" class="required-members-toggle"
+            >收集单可填报成员全部计入必填人</el-checkbox
+          >
+          <el-table
+            class="demand-table-compact member-grant-table required-subject-table"
+            :data="requiredSubjects"
+            row-key="rowKey"
+            size="mini"
+            max-height="200"
+          >
+            <el-table-column label="类型" width="70"
+              ><template slot-scope="s">{{ s.row.type === 'DEPT' ? '部门' : '成员' }}</template></el-table-column
+            >
+            <el-table-column prop="name" label="名称" min-width="120" />
+            <el-table-column label="" width="60"
+              ><template slot-scope="s"
+                ><el-button type="text" @click="removeRequiredSubject(s.row)">移除</el-button></template
+              ></el-table-column
+            >
+          </el-table>
+          <p v-if="requiredData" class="required-summary">
+            必填 {{ (requiredData.members || []).length }} 人 · 已提交
+            {{ (requiredData.stats || {}).submitted || 0 }} · 未提交
+            {{ (requiredData.stats || {}).pending || 0 }} · 匿名提交
+            {{ (requiredData.stats || {}).anonymous || 0 }}
+          </p>
+          <el-button type="primary" :loading="requiredSaving" @click="saveRequired">保存必填人</el-button>
+          <h4 class="required-list-title">本轮名单</h4>
+          <el-table
+            v-loading="requiredLoading"
+            class="demand-table-compact required-member-table"
+            :data="(requiredData && requiredData.members) || []"
+            size="mini"
+            max-height="320"
+          >
+            <el-table-column prop="name" label="姓名" width="90" />
+            <el-table-column prop="departments" label="部门" min-width="110" show-overflow-tooltip />
+            <el-table-column label="来源" width="130"
+              ><template slot-scope="s">{{ sourceText(s.row.sources) }}</template></el-table-column
+            >
+            <el-table-column label="状态" width="80"
+              ><template slot-scope="s"
+                ><el-tag size="mini" :type="s.row.submitted ? 'success' : 'danger'">{{
+                  s.row.submitted ? '已提交' : '未提交'
+                }}</el-tag></template
+              ></el-table-column
+            >
+          </el-table>
+        </template></el-drawer
       >
       <el-drawer
         title="成员与权限"
@@ -634,6 +793,15 @@ export default {
       comboText: '',
       comboVisible: false,
       comboPanelWidth: 360,
+      requiredVisible: false,
+      requiredData: null,
+      requiredSubjects: [],
+      requiredRequireMembers: false,
+      requiredLoading: false,
+      requiredSaving: false,
+      requiredComboText: '',
+      requiredComboVisible: false,
+      requiredPanelWidth: 360,
       departmentImportVisible: false,
       departmentImportText: '',
       departmentImportSaving: false,
@@ -731,6 +899,17 @@ export default {
     grantTableMaxHeight() {
       return Math.max(240, this.viewportHeight - (this.mobile ? 470 : 440))
     },
+    roundModeText() {
+      const mode = (this.requiredData && this.requiredData.roundMode) || 'NONE'
+      if (mode === 'SINGLE') return '单轮'
+      if (mode === 'PERIODIC')
+        return '周期（' + ((this.requiredData && this.requiredData.roundPeriod) === 'QUARTER' ? '每季' : '每月') + '）'
+      return '不启用'
+    },
+    requiredEndText() {
+      const end = this.requiredData && this.requiredData.roundEndTime
+      return end ? String(end).replace('T', ' ').substring(0, 16) : '未设置'
+    },
     selectAllFill: {
       get() {
         return this.grantRows.length > 0 && this.grantRows.every((r) => r.canFill)
@@ -790,6 +969,15 @@ export default {
     },
     comboText(value) {
       this.applyComboFilter(value)
+    },
+    requiredComboText(value) {
+      this.applyRequiredFilter(value)
+    },
+    requiredVisible(value) {
+      if (!value) {
+        this.requiredComboVisible = false
+        this.requiredComboText = ''
+      }
     },
     membersVisible(value) {
       if (!value) {
@@ -873,9 +1061,20 @@ export default {
         allowAnonymous: !!form.allowAnonymous,
         published: !!form.published,
         endTime: form.endTime ? String(form.endTime).replace('T', ' ').substring(0, 19) : null,
+        roundMode: form.roundMode || 'NONE',
+        roundPeriod: form.roundPeriod || 'MONTH',
+        roundEndTime: form.roundEndTime
+          ? String(form.roundEndTime).replace('T', ' ').substring(0, 19)
+          : null,
+        reminderMode: form.reminderMode || 'DEFAULT',
+        requireMembers: !!form.requireMembers,
+        requiresLeaderApproval: !!form.requiresLeaderApproval,
         revision: form.revision || 0
       }
       this.configVisible = true
+    },
+    leaderApprovalChanged(value) {
+      if (value) this.config.allowAnonymous = false
     },
     visibilityChanged(value) {
       if (value === 'SELECTED') this.config.allowAnonymous = false
@@ -890,6 +1089,99 @@ export default {
       } finally {
         this.saving = false
       }
+    },
+    async openRequired() {
+      if (!this.selected) return
+      this.requiredVisible = true
+      this.requiredData = null
+      this.requiredSubjects = []
+      await this.loadRequired()
+    },
+    async loadRequired() {
+      if (!this.selected) return
+      this.requiredLoading = true
+      try {
+        const data = (await api.requiredMembers(this.selected.formKey)).data || {}
+        this.requiredData = data
+        this.requiredSubjects = (data.subjects || []).map((row) => ({
+          type: row.type,
+          id: String(row.id),
+          name: row.name,
+          rowKey: row.type + ':' + row.id
+        }))
+        this.requiredRequireMembers = !!data.requireMembers
+      } catch (e) {
+        this.$message.error(e.msg || '必填人加载失败')
+      } finally {
+        this.requiredLoading = false
+      }
+    },
+    isRequiredAdded(data) {
+      if (!data || data.type === 'group') return false
+      const type = data.type === 'department' ? 'DEPT' : 'USER'
+      const id = data.type === 'department' ? data.deptKey : data.userId
+      return this.requiredSubjects.some(
+        (row) => row.type === type && String(row.id) === String(id)
+      )
+    },
+    requiredNodeHint(data) {
+      if (this.isRequiredAdded(data)) return '已添加'
+      if (data.type === 'department') return '含下级 ' + Number(data.memberCount || 0) + ' 人'
+      return ''
+    },
+    addRequiredNode(data) {
+      if (!data || data.type === 'group' || this.isRequiredAdded(data)) return
+      const type = data.type === 'department' ? 'DEPT' : 'USER'
+      const id = data.type === 'department' ? data.deptKey : data.userId
+      this.requiredSubjects.push({
+        type,
+        id: String(id),
+        name: data.name,
+        rowKey: type + ':' + id
+      })
+    },
+    removeRequiredSubject(row) {
+      this.requiredSubjects = this.requiredSubjects.filter(
+        (item) => !(item.type === row.type && String(item.id) === String(row.id))
+      )
+    },
+    sourceText(sources) {
+      const labels = { USER: '组织成员', DEPT: '按部门', MEMBER: '收集单成员' }
+      return (sources || []).map((source) => labels[source] || source).join('、')
+    },
+    async saveRequired() {
+      if (!this.selected) return
+      this.requiredSaving = true
+      try {
+        await api.saveRequiredMembers(this.selected.formKey, {
+          subjects: this.requiredSubjects.map((row) => ({ type: row.type, id: row.id })),
+          requireMembers: !!this.requiredRequireMembers
+        })
+        this.$message.success('必填人已保存')
+        await this.loadRequired()
+        await this.load()
+      } catch (e) {
+        this.$message.error(e.msg || '必填人保存失败')
+      } finally {
+        this.requiredSaving = false
+      }
+    },
+    openRequiredCombo() {
+      this.requiredComboVisible = true
+      this.$nextTick(() => {
+        this.syncRequiredPanelWidth()
+        this.applyRequiredFilter(this.requiredComboText)
+      })
+    },
+    applyRequiredFilter(value) {
+      this.$nextTick(() => {
+        if (this.$refs.requiredTree) this.$refs.requiredTree.filter(String(value || ''))
+      })
+    },
+    syncRequiredPanelWidth() {
+      const input = this.$refs.requiredInput
+      const width = input && input.$el ? input.$el.getBoundingClientRect().width : 0
+      if (width > 0) this.requiredPanelWidth = Math.floor(width)
     },
     async toggleVoid(form) {
       const makeVoid = !form.voided
@@ -1682,5 +1974,20 @@ export default {
 .permission-global-only .demand-muted {
   width: 100%;
   margin: 0;
+}
+.required-members-toggle {
+  margin: 8px 0 12px;
+}
+.required-subject-table {
+  margin-bottom: 10px;
+}
+.required-summary {
+  margin: 10px 0 12px;
+  color: #5c6675;
+  font-size: 13px;
+}
+.required-list-title {
+  margin: 18px 0 10px;
+  font-size: 15px;
 }
 </style>

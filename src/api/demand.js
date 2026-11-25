@@ -93,3 +93,14 @@ export const downloadAttachment = (id, data) =>
     responseType: 'blob',
     skipAuthentication: !!data.queryCode
   })
+export const notices = (params) => request.get('/demand-api/notices', { params })
+export const readNotice = (id) => request.post(`/demand-api/notices/${id}/read`)
+export const readAllNotices = () => request.post('/demand-api/notices/read-all')
+export const requiredMembers = (key) =>
+  request.get(`/demand-api/admin/forms/${encodeURIComponent(key)}/required-members`)
+export const saveRequiredMembers = (key, data) =>
+  request.post(`/demand-api/admin/forms/${encodeURIComponent(key)}/required-members`, data)
+export const nextRound = (key, data) =>
+  request.post(`/demand-api/admin/forms/${encodeURIComponent(key)}/round/next`, data)
+export const decideApproval = (id, data) =>
+  request.post(`/demand-api/requests/${id}/approval`, data)

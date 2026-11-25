@@ -2,7 +2,7 @@
   <section class="demand-page" v-loading="loading">
     <div class="demand-title-row">
       <div>
-        <h1>{{ pending ? '待我处理' : '我的需求' }}</h1>
+        <h1>{{ pending ? '待我处理' : approval ? '待我审批' : '我的需求' }}</h1>
         <p class="demand-subtitle">{{ subtitle }}</p>
       </div>
     </div>
@@ -38,9 +38,9 @@
           placeholder="搜索标题、编号或收集单"
           clearable
           @keyup.enter.native="search"
-        /><el-select v-if="!selectedFormCollectOnly" v-model="query.decision" clearable placeholder="采纳结果"
+        /><el-select v-if="!selectedFormCollectOnly && !approval" v-model="query.decision" clearable placeholder="采纳结果"
           ><el-option v-for="(label, key) in decisions" :key="key" :label="label" :value="key" /></el-select
-        ><el-select v-if="!selectedFormCollectOnly" v-model="query.progress" clearable placeholder="实施进度"
+        ><el-select v-if="!selectedFormCollectOnly && !approval" v-model="query.progress" clearable placeholder="实施进度"
           ><el-option
             v-for="(label, key) in implementationProgresses"
             :key="key"
@@ -56,7 +56,7 @@
           unlink-panels
         /><el-button type="primary" icon="el-icon-search" @click="search">查询</el-button
         ><el-button @click="reset">重置</el-button
-        ><el-button icon="el-icon-download" :loading="exporting" @click="exportExcel">导出 Excel</el-button>
+        ><el-button v-if="!approval" icon="el-icon-download" :loading="exporting" @click="exportExcel">导出 Excel</el-button>
       </div>
       <div v-if="batchEnabled && selectedRows.length" class="demand-batch-bar">
         <span class="demand-muted">已选 {{ selectedRows.length }} 条</span>
@@ -83,7 +83,9 @@
                 <el-tag type="info" size="mini">只收集</el-tag>
               </template>
               <template v-else>
-                <el-tag v-if="s.row.publicationPublished" type="success" size="mini">已公示</el-tag>
+                <el-tag v-if="s.row.approvalStatus === 'PENDING'" type="warning" size="mini">待审批</el-tag>
+                <el-tag v-else-if="s.row.approvalStatus === 'REJECTED'" type="danger" size="mini">已驳回</el-tag>
+                <el-tag v-else-if="s.row.publicationPublished" type="success" size="mini">已公示</el-tag>
                 <el-tag v-else-if="s.row.publicationArchived" type="info" size="mini">已归档</el-tag>
                 <el-tag v-else-if="s.row.publicationSkipped" type="info" size="mini">不公示</el-tag>
                 <el-tag v-else-if="pending && s.row.decision !== 'REJECTED' && s.row.progress !== 'COMPLETED'" type="warning" size="mini">待公示</el-tag>
@@ -93,7 +95,7 @@
             <small class="demand-muted request-meta" :title="meta(s.row)">{{ meta(s.row) }}</small></template
           ></el-table-column
         >
-        <el-table-column v-if="pending" prop="submitterName" label="填报者" width="72" class-name="nowrap-cell" /><el-table-column
+        <el-table-column v-if="pending || approval" prop="submitterName" label="填报者" width="72" class-name="nowrap-cell" /><el-table-column
           prop="handlerName"
           label="经办人"
           width="82"
@@ -101,7 +103,8 @@
         />
         <el-table-column label="采纳结果" width="76"
           ><template slot-scope="s"
-            ><el-tag v-if="s.row.collectOnly" type="info" size="small">只收集</el-tag
+            ><el-tag v-if="approval" type="warning" size="small">待审批</el-tag
+            ><el-tag v-else-if="s.row.collectOnly" type="info" size="small">只收集</el-tag
             ><el-tag v-else :type="tag(s.row.decision)" size="small">{{ decisions[s.row.decision] }}</el-tag></template
           ></el-table-column
         ><el-table-column label="实施进度" width="72"
@@ -129,7 +132,7 @@
               <el-tag v-if="row.unread && (!pending || row.collectOnly)" type="danger" size="mini">未读</el-tag>
             </div>
             <p class="demand-card-kicker">{{ row.requestNo }}</p>
-            <p class="demand-card-line">{{ plain(row.formName) }} · {{ row.handlerName || '待分派' }}</p>
+            <p class="demand-card-line">{{ plain(row.formName) }} · {{ approval ? '待部门主管审批' : row.handlerName || '待分派' }}</p>
             <p class="demand-card-time">
               提报 {{ date(row.createTime) }}<span v-if="row.replyTime"> · 回复 {{ date(row.replyTime) }}</span>
             </p>
@@ -138,12 +141,16 @@
                 <el-tag type="info" size="small">只收集</el-tag>
               </template>
               <template v-else>
-                <el-tag :type="tag(row.decision)" size="small">{{ decisions[row.decision] }}</el-tag
-                ><el-tag v-if="row.progress !== 'NONE'" type="info" size="small">{{ progresses[row.progress] }}</el-tag
-                ><el-tag v-if="row.publicationPublished" type="success" size="small">已公示</el-tag
-                ><el-tag v-else-if="row.publicationArchived" type="info" size="small">已归档</el-tag
-                ><el-tag v-else-if="row.publicationSkipped" type="info" size="small">不公示</el-tag
-                ><el-tag v-if="row.followupPending" type="warning" size="small">追问</el-tag>
+                <el-tag v-if="row.approvalStatus === 'PENDING'" type="warning" size="small">待审批</el-tag>
+                <el-tag v-else-if="row.approvalStatus === 'REJECTED'" type="danger" size="small">已驳回</el-tag>
+                <template v-if="!approval">
+                  <el-tag :type="tag(row.decision)" size="small">{{ decisions[row.decision] }}</el-tag
+                  ><el-tag v-if="row.progress !== 'NONE'" type="info" size="small">{{ progresses[row.progress] }}</el-tag
+                  ><el-tag v-if="row.publicationPublished" type="success" size="small">已公示</el-tag
+                  ><el-tag v-else-if="row.publicationArchived" type="info" size="small">已归档</el-tag
+                  ><el-tag v-else-if="row.publicationSkipped" type="info" size="small">不公示</el-tag>
+                </template>
+                <el-tag v-if="row.followupPending" type="warning" size="small">追问</el-tag>
               </template>
             </div>
           </div>
@@ -155,7 +162,7 @@
             </div>
           </div>
         </article>
-        <el-empty v-if="!rows.length && !loading" description="暂无需求" />
+        <el-empty v-if="!rows.length && !loading" :description="emptyText" />
       </div>
       <el-pagination
         :current-page.sync="query.page"
@@ -265,7 +272,11 @@ export default {
       progresses,
       implementationProgresses,
       outcomeDecisions,
-      scope: this.$route.path.endsWith('/pending') ? 'pending' : 'mine',
+      scope: this.$route.path.endsWith('/pending')
+        ? 'pending'
+        : this.$route.path.endsWith('/approvals')
+          ? 'approval'
+          : 'mine',
       formSummaries: [],
       formKeyword: '',
       formsLoading: false,
@@ -293,13 +304,18 @@ export default {
     pending() {
       return this.$route.path.endsWith('/pending')
     },
+    approval() {
+      return this.$route.path.endsWith('/approvals')
+    },
     subtitle() {
       if (this.selectedFormKey) return '该收集单下的需求明细，可继续搜索或筛选。'
+      if (this.approval) return '按收集单查看等待本人审批的需求；通过后进入单据处理流程。'
       return this.pending
         ? '按收集单分类查看分派给本人的待办需求。'
         : '按收集单分类查看本人需求的正式回复、采纳结果与实施进度。'
     },
     emptyText() {
+      if (this.approval) return '暂无待审批需求'
       return this.scope === 'pending' ? '暂无待办需求' : '暂无需求'
     },
     filteredForms() {

@@ -17,9 +17,19 @@ export default [
         meta: { requireLogin: true, title: '待我处理' }
       },
       {
+        path: 'approvals',
+        component: () => import('@/views/demand/Requests'),
+        meta: { requireLogin: true, title: '待我审批' }
+      },
+      {
         path: 'publications',
         component: () => import('@/views/demand/Publications'),
         meta: { requireLogin: true, title: '需求公示' }
+      },
+      {
+        path: 'messages',
+        component: () => import('@/views/demand/Notices'),
+        meta: { requireLogin: true, title: '消息中心' }
       },
       {
         path: 'manage',

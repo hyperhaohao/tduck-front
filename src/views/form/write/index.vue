@@ -24,6 +24,13 @@
             : '本次以当前登录账户提交，可在“我的需求”查看后续回复。'
         }}
       </p>
+      <p v-if="demandMeta.requiredOfMe" class="demand-mode-hint demand-required-hint">
+        您是本轮必填人{{
+          demandMeta.roundEndTime
+            ? '，请在 ' + String(demandMeta.roundEndTime).replace('T', ' ').substring(0, 16) + ' 前提交'
+            : ''
+        }}；匿名提交不计入必填完成。
+      </p>
     </div>
     <el-alert v-if="demandLoadError" :title="demandLoadError" type="error" :closable="false" />
     <form-qrcode v-if="!demandMeta.managed" />
@@ -49,6 +56,9 @@
         <p>需求编号：{{ submitResult.demandReceipt.requestNo }}</p>
         <template v-if="submitResult.demandReceipt.anonymous"
           ><p>请保存查询码，后续凭编号和查询码查看回复。</p>
+          <p v-if="demandMeta.requiredOfMe" class="demand-required-hint">
+            匿名提交不计入必填完成；如需计入，请登录后重新提交。
+          </p>
           <el-input :value="submitResult.demandReceipt.queryCode" readonly show-password />
           <div class="receipt-actions">
             <el-button @click="copyReceipt">复制查询信息</el-button
@@ -56,7 +66,10 @@
           </div></template
         >
         <template v-else
-          ><p>已加入“我的需求”，处理后的回复和进度将在其中显示。</p>
+          ><p v-if="submitResult.demandReceipt.approvalPending">
+            已提交，等待部门主管审批；通过后进入单据处理流程。
+          </p>
+          <p v-else>已加入“我的需求”，处理后的回复和进度将在其中显示。</p>
           <el-button type="primary" @click="openReceipt">查看我的需求</el-button></template
         >
         <el-button type="text" @click="$router.push('/demand/home')">返回首页</el-button>
@@ -430,6 +443,9 @@ export default {
   color: #909399;
   font-size: 13px;
   line-height: 1.8;
+}
+.demand-required-hint {
+  color: #e6a23c;
 }
 .demand-login-gate {
   margin-top: 20px;

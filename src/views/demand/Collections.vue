@@ -106,15 +106,24 @@
               <span class="demand-card-status-dot" aria-hidden="true" />
               <span>{{ expired(form) ? '已截止' : '收集中' }}</span>
             </span>
-            <span class="demand-card-meta-end">{{
-              form.endTime ? '截止：' + date(form.endTime) : '长期有效'
-            }}</span>
+            <span class="demand-card-meta-end">{{ deadlineText(form) }}</span>
           </div>
           <div class="demand-tags demand-card-tags">
             <el-tag v-if="form.collectOnly" size="small" type="info">只收集</el-tag>
             <el-tag v-if="form.visibility === 'SELECTED'" size="small" type="warning">指定人员</el-tag>
             <el-tag v-if="form.allowAnonymous" size="small" type="info">可匿名</el-tag>
+            <el-tag v-if="form.requiredOfMe" size="small" type="warning">本人必填</el-tag>
+            <el-tag v-if="form.requiredOfMe && form.requiredSubmitted" size="small" type="success">已提交</el-tag>
+            <el-tag v-if="form.requiredOfMe && !form.requiredSubmitted" size="small" type="danger"
+              >未提交</el-tag
+            >
           </div>
+          <p
+            v-if="form.requiredOfMe && form.allowAnonymous"
+            class="demand-muted collection-required-tip"
+          >
+            匿名提交不计入必填完成
+          </p>
         </div>
         <div class="demand-card-actions">
           <div class="demand-card-actions-main">
@@ -258,7 +267,17 @@ export default {
       return new DOMParser().parseFromString(value || '', 'text/html').body.textContent || ''
     },
     expired(form) {
-      return form.endTime && new Date(form.endTime).getTime() < Date.now()
+      const ends = [form.endTime, form.roundEndTime]
+        .filter(Boolean)
+        .map((value) => new Date(value).getTime())
+        .filter((value) => !Number.isNaN(value))
+      return ends.length > 0 && Math.min(...ends) < Date.now()
+    },
+    deadlineText(form) {
+      if (form.roundEndTime) {
+        return '本轮截止：' + String(form.roundEndTime).replace('T', ' ').substring(0, 16)
+      }
+      return form.endTime ? '截止：' + this.date(form.endTime) : '长期有效'
     },
     date(value) {
       return String(value).substring(0, 10)
@@ -336,6 +355,10 @@ export default {
 .recent-item > span {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+.collection-required-tip {
+  margin: 6px 0 0;
+  font-size: 12px;
 }
 @media (max-width: 767px) {
   .recent-item {

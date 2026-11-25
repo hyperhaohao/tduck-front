@@ -115,33 +115,33 @@
         </article>
         <el-empty v-if="!loading && !filtered.length" description="暂无已发布公示" />
       </div>
-      <el-drawer
-        :visible.sync="visible"
-        title="公示详情"
-        :size="mobile ? '100%' : '680px'"
-        custom-class="demand-detail-drawer"
-        ><div v-if="detail">
-          <el-alert
-            v-if="detail.archived"
-            title="该公示已归档，员工端不再展示；可恢复后重新公开。"
-            type="info"
-            :closable="false"
-          />
-          <h2>{{ detail.title }}</h2>
-          <p class="demand-muted">{{ String(detail.updateTime).replace('T', ' ').substring(0, 16) }}</p>
-          <p v-if="detail.formName" class="demand-muted">收集单：{{ plain(detail.formName) }}</p>
-          <p class="demand-preline">{{ detail.summary }}</p>
-          <el-divider />
-          <p class="demand-preline publication-content">{{ detail.content }}</p>
-          <div v-if="detail.canManage" class="publication-actions">
-            <el-button :loading="managing" @click="toggleArchive">{{
-              detail.archived ? '恢复公示' : '归档公示'
-            }}</el-button>
-            <el-button type="danger" plain :loading="managing" @click="removePublication">删除公示</el-button>
-          </div>
-        </div></el-drawer
-      >
     </template>
+    <el-drawer
+      :visible.sync="visible"
+      title="公示详情"
+      :size="mobile ? '100%' : '680px'"
+      custom-class="demand-detail-drawer"
+      ><div v-if="detail">
+        <el-alert
+          v-if="detail.archived"
+          title="该公示已归档，员工端不再展示；可恢复后重新公开。"
+          type="info"
+          :closable="false"
+        />
+        <h2>{{ detail.title }}</h2>
+        <p class="demand-muted">{{ String(detail.updateTime).replace('T', ' ').substring(0, 16) }}</p>
+        <p v-if="detail.formName" class="demand-muted">收集单：{{ plain(detail.formName) }}</p>
+        <p class="demand-preline">{{ detail.summary }}</p>
+        <el-divider />
+        <p class="demand-preline publication-content">{{ detail.content }}</p>
+        <div v-if="detail.canManage" class="publication-actions">
+          <el-button :loading="managing" @click="toggleArchive">{{
+            detail.archived ? '恢复公示' : '归档公示'
+          }}</el-button>
+          <el-button type="danger" plain :loading="managing" @click="removePublication">删除公示</el-button>
+        </div>
+      </div></el-drawer
+    >
   </section>
 </template>
 <script>
@@ -230,9 +230,16 @@ export default {
       })
     }
   },
-  created() {
-    this.load()
+  async created() {
+    await this.load()
     window.addEventListener('resize', this.resize)
+    if (this.$route.query.id) {
+      try {
+        await this.openById(this.$route.query.id)
+      } catch (e) {
+        this.error = e.msg || '公示不存在或已归档。'
+      }
+    }
   },
   beforeDestroy() {
     window.removeEventListener('resize', this.resize)
@@ -270,6 +277,12 @@ export default {
       this.visible = true
       await markRead({ type: 'PUBLICATION', id: row.id, version: this.detail.version })
       row.unread = false
+      window.dispatchEvent(new Event('demand-updated'))
+    },
+    async openById(id) {
+      this.detail = (await publicationDetail(id)).data
+      this.visible = true
+      await markRead({ type: 'PUBLICATION', id, version: this.detail.version })
       window.dispatchEvent(new Event('demand-updated'))
     },
     async toggleArchive() {

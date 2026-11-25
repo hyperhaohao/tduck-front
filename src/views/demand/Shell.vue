@@ -14,6 +14,20 @@
         <router-link class="demand-brand" to="/demand/home"><BrandLogo :compact="collapsed && !mobile" /></router-link>
       </div>
       <div class="header-account">
+        <el-badge
+          v-if="logged"
+          :value="counts.noticeUnread"
+          :max="99"
+          :hidden="!counts.noticeUnread"
+          class="header-notice"
+        >
+          <el-button
+            icon="el-icon-chat-dot-round"
+            circle
+            :aria-label="`消息中心，未读 ${counts.noticeUnread}`"
+            @click="navigate('/demand/messages')"
+          />
+        </el-badge>
         <template v-if="logged"
           ><span class="account-avatar" aria-hidden="true"
             ><img v-if="user.avatar" :src="user.avatar" alt="" /><span v-else>{{
@@ -61,6 +75,16 @@
                   class="nav-count"
                   title="待办数量（含未答复追问）" /></span
             ></el-menu-item>
+            <el-menu-item v-if="logged && state.approver" index="/demand/approvals"
+              ><i class="el-icon-s-check" /><span slot="title"
+                >待我审批
+                <el-badge
+                  :value="counts.approvalPending"
+                  :max="99"
+                  :hidden="!counts.approvalPending"
+                  class="nav-count"
+                  title="待部门主管审批数量" /></span
+            ></el-menu-item>
             <el-menu-item v-if="logged" index="/demand/publications"
               ><i class="el-icon-bell" /><span slot="title"
                 >需求公示
@@ -70,6 +94,16 @@
                   :hidden="!counts.publicationUnread"
                   class="nav-count"
                   title="未读公示数" /></span
+            ></el-menu-item>
+            <el-menu-item v-if="logged" index="/demand/messages"
+              ><i class="el-icon-chat-dot-round" /><span slot="title"
+                >消息中心
+                <el-badge
+                  :value="counts.noticeUnread"
+                  :max="99"
+                  :hidden="!counts.noticeUnread"
+                  class="nav-count"
+                  title="未读消息数" /></span
             ></el-menu-item>
             <el-menu-item v-if="logged && state.documentAccess && !state.global" index="/demand/manage"
               ><i class="el-icon-folder-checked" /><span slot="title">单据管理</span></el-menu-item
@@ -129,7 +163,9 @@ export default {
       return {
         mineUnread: badgeValue(this.state.mineUnread),
         pending: badgeValue(this.state.pending),
-        publicationUnread: badgeValue(this.state.publicationUnread)
+        publicationUnread: badgeValue(this.state.publicationUnread),
+        noticeUnread: badgeValue(this.state.noticeUnread),
+        approvalPending: badgeValue(this.state.approvalPending)
       }
     },
     activeNotices() {
@@ -142,10 +178,22 @@ export default {
           count: this.state.handler || this.state.manage ? this.counts.pending : 0
         },
         {
+          path: '/demand/approvals',
+          label: '待我审批：待办',
+          icon: 'el-icon-s-check',
+          count: this.state.approver ? this.counts.approvalPending : 0
+        },
+        {
           path: '/demand/publications',
           label: '需求公示：未读',
           icon: 'el-icon-bell',
           count: this.counts.publicationUnread
+        },
+        {
+          path: '/demand/messages',
+          label: '消息中心：未读',
+          icon: 'el-icon-chat-dot-round',
+          count: this.counts.noticeUnread
         }
       ].filter((n) => n.count > 0)
     },
@@ -218,7 +266,10 @@ export default {
         manage: false,
         mineUnread: 0,
         pending: 0,
-        publicationUnread: 0
+        publicationUnread: 0,
+        noticeUnread: 0,
+        approvalPending: 0,
+        approver: false
       })
       this.$router.replace('/demand/home')
     }
