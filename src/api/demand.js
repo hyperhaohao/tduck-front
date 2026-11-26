@@ -104,3 +104,25 @@ export const nextRound = (key, data) =>
   request.post(`/demand-api/admin/forms/${encodeURIComponent(key)}/round/next`, data)
 export const decideApproval = (id, data) =>
   request.post(`/demand-api/requests/${id}/approval`, data)
+
+export const dingtalkStatus = () => request.get('/demand-api/admin/dingtalk/status')
+export const saveDingtalkSettings = (data) =>
+  request.put('/demand-api/admin/dingtalk/settings', data)
+export const testDingtalkConnection = () => request.post('/demand-api/admin/dingtalk/test-connection')
+export const syncDingtalk = () => request.post('/demand-api/admin/dingtalk/sync')
+export const dingtalkUsers = (params) => request.get('/demand-api/admin/dingtalk/users', { params })
+export const bindDingtalkUser = (dingtalkUserId, data) =>
+  request.post(`/demand-api/admin/dingtalk/users/${encodeURIComponent(dingtalkUserId)}/bind`, data)
+export const unbindDingtalkUser = (dingtalkUserId) =>
+  request.post(`/demand-api/admin/dingtalk/users/${encodeURIComponent(dingtalkUserId)}/unbind`)
+export const confirmDingtalkUser = (dingtalkUserId) =>
+  request.post(`/demand-api/admin/dingtalk/users/${encodeURIComponent(dingtalkUserId)}/confirm`)
+export const confirmMatchedDingtalk = () =>
+  request.post('/demand-api/admin/dingtalk/confirm-matched')
+export const dingtalkLocalUsers = (keyword = '') =>
+  request.get('/demand-api/admin/dingtalk/local-users', { params: { keyword } })
+export const testDingtalk = () => request.post('/demand-api/admin/dingtalk/test')
+export const dingtalkPushes = (params) =>
+  request.get('/demand-api/admin/dingtalk/pushes', { params })
+export const retryDingtalkPush = (id) =>
+  request.post(`/demand-api/admin/dingtalk/pushes/${encodeURIComponent(id)}/retry`)

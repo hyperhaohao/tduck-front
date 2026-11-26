@@ -275,6 +275,8 @@
               @current-change="loadTable"
             />
           </template></el-tab-pane
+        ><el-tab-pane v-if="isGlobal && mode === 'admin'" label="钉钉推送" name="dingtalk" lazy
+          ><component :is="dingtalkPanel" /></el-tab-pane
       ></el-tabs>
       <el-dialog title="新建需求收集单" :visible.sync="createVisible" :width="dialogWidth" :close-on-click-modal="false"
         ><el-form label-position="top"
@@ -759,6 +761,7 @@ import * as api from '@/api/demand'
 import { createFormRequest } from '@/api/project/form'
 import { refreshDemand, decisions, progresses } from '@/utils/demand'
 import DemandDetail from './components/DemandDetail'
+import DingTalkPanel from './components/DingTalkPanel'
 import DemandCardCover from './components/DemandCardCover'
 import FormOverview from './components/FormOverview'
 import exportMixin from './exportMixin'
@@ -767,12 +770,13 @@ export default {
   props: {
     mode: { type: String, default: 'admin' }
   },
-  components: { DemandDetail, DemandCardCover, FormOverview },
+  components: { DemandDetail, DemandCardCover, FormOverview, DingTalkPanel },
   mixins: [exportMixin],
   data() {
     return {
       allowed: false,
       isGlobal: false,
+      dingtalkPanel: DingTalkPanel,
       canCreate: false,
       canDocument: false,
       permissionApi: false,

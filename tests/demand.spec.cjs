@@ -70,6 +70,51 @@ const noticeSeed = [
   { id: 'notice-3', kind: 'ASSIGN', formKey: 'A', demandId: 'demand-1', publicationId: null, title: '有新的需求分派给您', content: '优化设备维护记录查询', unread: false, createTime: '2026-11-12 09:00:00' }
 ]
 let noticeRows = []
+const dingtalkStatusSeed = {
+  masterEnabled: true,
+  requestedEnabled: true,
+  enabled: true,
+  configured: true,
+  todoEnabled: true,
+  creatorConfigured: true,
+  linkBase: 'http://example.test',
+  events: {
+    APPROVAL: { work: true, todo: true },
+    APPROVAL_RESULT: { work: true, todo: false },
+    REQUIRED: { work: true, todo: true },
+    REPLY: { work: true, todo: false },
+    RESULT: { work: true, todo: false },
+    ASSIGN: { work: false, todo: false },
+    FOLLOWUP: { work: false, todo: false },
+    NEW_DEMAND: { work: false, todo: false },
+    PUBLICATION: { work: false, todo: false }
+  },
+  quiet: { start: '20:00', end: '08:00', bypassApproval: true },
+  mapping: { total: 2, confirmed: 1, PENDING_CONFIRM: 1, UNMATCHED: 0, CONFLICT: 0 },
+  pushes: { PENDING: 1, SENT: 1, total: 2 }
+}
+const dingtalkUsersSeed = {
+  rows: [
+    { dingtalkUserId: 'ding-1', name: '钉钉甲', deptNames: '技术部', emailMasked: 'ab***@example.com', localName: '测试经办人', status: 'CONFIRMED' },
+    { dingtalkUserId: 'ding-2', name: '钉钉乙', deptNames: '研发组', emailMasked: 'cd***@example.com', localName: null, status: 'PENDING_CONFIRM' }
+  ],
+  total: 2,
+  counts: { total: 2, confirmed: 1, PENDING_CONFIRM: 1, UNMATCHED: 0, CONFLICT: 0 }
+}
+const dingtalkPushesSeed = {
+  rows: [
+    { id: 'push-1', channel: 'TODO', action: 'CREATE', kind: 'APPROVAL', title: '【瑞玛问卷】待审批', status: 'SENT', attempts: 1, lastError: null },
+    { id: 'push-2', channel: 'WORK', action: 'CREATE', kind: 'APPROVAL', title: '【瑞玛问卷】待审批', status: 'FAILED', attempts: 1, lastError: 'timeout' }
+  ],
+  total: 2,
+  counts: { PENDING: 1, SENT: 1, FAILED: 1 }
+}
+const dingtalkLocalSeed = {
+  rows: [{ userId: '30', name: '测试经办人', emailMasked: 'ab***@example.com', bound: false }]
+}
+let dingtalkStatus = null
+let dingtalkUsers = null
+let dingtalkPushes = null
 let requiredSettings = null
 let departments = []
 let departmentRoster = []
@@ -115,6 +160,9 @@ async function mockApi(page, role = 'all', opts = {}) {
     requireMembers: false
   }))
   noticeRows = noticeSeed.map(item => ({ ...item }))
+  dingtalkStatus = JSON.parse(JSON.stringify(dingtalkStatusSeed))
+  dingtalkUsers = JSON.parse(JSON.stringify(dingtalkUsersSeed))
+  dingtalkPushes = JSON.parse(JSON.stringify(dingtalkPushesSeed))
   requiredSettings = {
     roundMode: opts.required ? 'SINGLE' : 'NONE',
     roundPeriod: 'MONTH',
@@ -396,6 +444,37 @@ async function mockApi(page, role = 'all', opts = {}) {
       calls.push({ type: 'readAllNotices' })
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, data: null, msg: null }) })
     }
+    if (api === '/demand-api/admin/dingtalk/settings' && route.request().method() === 'PUT') {
+      const body = route.request().postDataJSON() || {}
+      calls.push({ type: 'saveDingtalk', body })
+      dingtalkStatus.requestedEnabled = !!body.enabled
+      dingtalkStatus.enabled = !!body.enabled
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, data: dingtalkStatus, msg: null }) })
+    }
+    if (api === '/demand-api/admin/dingtalk/sync' && route.request().method() === 'POST') {
+      calls.push({ type: 'syncDingtalk' })
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, data: { users: 2, departments: 2, matched: 1, pendingConfirm: 1, unmatched: 0, conflict: 0, invalid: 0, durationMs: 12 }, msg: null }) })
+    }
+    if (api === '/demand-api/admin/dingtalk/test-connection' && route.request().method() === 'POST') {
+      calls.push({ type: 'testDingtalkConnection' })
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, data: { workToken: true, todoToken: true, latencyMs: 12 }, msg: null }) })
+    }
+    if (api === '/demand-api/admin/dingtalk/test' && route.request().method() === 'POST') {
+      calls.push({ type: 'testDingtalk' })
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, data: { taskId: 'work-task', todoTaskId: 'todo-task' }, msg: null }) })
+    }
+    if (api === '/demand-api/admin/dingtalk/confirm-matched' && route.request().method() === 'POST') {
+      calls.push({ type: 'confirmMatchedDingtalk' })
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, data: 1, msg: null }) })
+    }
+    if (/^\/demand-api\/admin\/dingtalk\/users\/[^/]+\/(confirm|bind|unbind)$/.test(api) && route.request().method() === 'POST') {
+      const parts = api.split('/'); calls.push({ type: 'dingtalkUserAction', action: parts[6], id: decodeURIComponent(parts[5]) })
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, data: true, msg: null }) })
+    }
+    if (/^\/demand-api\/admin\/dingtalk\/pushes\/[^/]+\/retry$/.test(api) && route.request().method() === 'POST') {
+      calls.push({ type: 'retryDingtalkPush', id: api.split('/')[5] })
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, data: true, msg: null }) })
+    }
     let data = null
     if (api === '/demand-api/capabilities') data = capabilityResponse(role, opts)
     else if (api === '/mange/user/page') data = { records: [], total: 0, current: 1, size: 10 }
@@ -416,6 +495,10 @@ async function mockApi(page, role = 'all', opts = {}) {
       if (role === 'consoleOnly' || role === 'orgOnly' || role === 'userManageOnly') visible = []
       data = visible.map((f) => ({ ...f, voided: options.voidedKey === f.formKey }))
     }
+    else if (api === '/demand-api/admin/dingtalk/status') data = dingtalkStatus
+    else if (api === '/demand-api/admin/dingtalk/users') data = dingtalkUsers
+    else if (api === '/demand-api/admin/dingtalk/pushes') data = dingtalkPushes
+    else if (api === '/demand-api/admin/dingtalk/local-users') data = dingtalkLocalSeed
     else if (api === '/demand-api/admin/forms/deleted') data = deletedForms
     else if (/^\/demand-api\/forms\/[^/]+\/handlers$/.test(api)) data = [{ userId: '30', name: '测试经办人' }]
     else if (/^\/demand-api\/forms\//.test(api)) data = { managed: true, allowAnonymous: api.endsWith('/A') }
@@ -1566,6 +1649,28 @@ test('message center fits desktop and mobile without overflow', async ({ page })
   await page.setViewportSize({ width: 390, height: 844 }); await page.reload()
   await noOverflow(page); await noInnerOverflow(page)
   await page.screenshot({ path: 'test-results/messages-mobile.png', fullPage: true, animations: 'disabled' })
+})
+
+test('admin dingtalk panel saves settings and shows mappings', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 }); await login(page); await mockApi(page, 'all')
+  await page.goto('/demand/admin')
+  await page.locator('.el-tabs__item').filter({ hasText: '钉钉推送' }).click()
+  await expect(page.getByText('应用状态', { exact: true })).toBeVisible()
+  await expect(page.getByText('待审批', { exact: true }).first()).toBeVisible()
+  await page.getByRole('button', { name: '保存设置' }).click()
+  await expect(page.getByText('钉钉推送设置已保存', { exact: true })).toBeVisible()
+  const saved = calls.find((call) => call.type === 'saveDingtalk')
+  expect(saved.body.enabled).toBe(true)
+  expect(saved.body['event.APPROVAL.todo']).toBe(true)
+  expect(saved.body['event.REQUIRED.work']).toBe(true)
+  await page.locator('.el-tabs__item').filter({ hasText: '推送日志' }).click()
+  await expect(page.getByText('【瑞玛问卷】待审批', { exact: true }).first()).toBeVisible()
+  await noOverflow(page)
+
+  await page.setViewportSize({ width: 390, height: 844 }); await page.reload()
+  await page.locator('.el-tabs__item').filter({ hasText: '钉钉推送' }).click()
+  await expect(page.getByText('应用状态', { exact: true })).toBeVisible()
+  await noOverflow(page)
 })
 
 test('leader sees pending approvals and approves with comment', async ({ page }) => {
