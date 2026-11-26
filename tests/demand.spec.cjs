@@ -1466,6 +1466,25 @@ test('header bell shows notice unread and opens message center', async ({ page }
   await noOverflow(page)
 })
 
+test('message center is a top-level item immediately after home', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 }); await login(page); await mockApi(page)
+  await page.goto('/demand/home')
+  const topItems = page.locator('.demand-sidebar .el-menu > .el-menu-item')
+  await expect(topItems.nth(0)).toContainText('首页')
+  await expect(topItems.nth(1)).toContainText('消息中心')
+  await expect(
+    page.locator('.demand-sidebar .el-submenu .el-menu-item').filter({ hasText: '消息中心' })
+  ).toHaveCount(0)
+  await noOverflow(page)
+
+  await page.setViewportSize({ width: 390, height: 844 }); await page.reload()
+  await page.getByRole('button', { name: '打开导航菜单' }).click()
+  const mobileTopItems = page.locator('.demand-sidebar .el-menu > .el-menu-item')
+  await expect(mobileTopItems.nth(0)).toContainText('首页')
+  await expect(mobileTopItems.nth(1)).toContainText('消息中心')
+  await noOverflow(page)
+})
+
 test('message center marks single notice read and supports read all', async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 768 }); await login(page); await mockApi(page)
   await page.goto('/demand/messages')
@@ -1580,7 +1599,7 @@ test('leader rejection requires a comment', async ({ page }) => {
   await expect(page.getByText('驳回时请填写审批意见', { exact: true })).toBeVisible()
   await drawer.getByPlaceholder('审批意见（驳回时必填）').fill('信息不足，请补充')
   await drawer.getByRole('button', { name: '驳回', exact: true }).click()
-  await expect(page.getByText('已驳回', { exact: true })).toBeVisible()
+  await expect(page.locator('.el-message__content').filter({ hasText: '已驳回' })).toBeVisible()
   const call = calls.find(c => c.type === 'decideApproval')
   expect(call.body.decision).toBe('REJECT')
   await expect(drawer.getByText('部门主管驳回：信息不足，请补充', { exact: true })).toBeVisible()

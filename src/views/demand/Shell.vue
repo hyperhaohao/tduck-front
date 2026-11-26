@@ -50,6 +50,16 @@
           @select="navigate"
         >
           <el-menu-item index="/demand/home"><i class="el-icon-house" /><span slot="title">首页</span></el-menu-item>
+          <el-menu-item v-if="logged" index="/demand/messages"
+            ><i class="el-icon-chat-dot-round" /><span slot="title"
+              >消息中心
+              <el-badge
+                :value="counts.noticeUnread"
+                :max="99"
+                :hidden="!counts.noticeUnread"
+                class="nav-count"
+                title="未读消息数" /></span
+          ></el-menu-item>
           <el-submenu index="center">
             <template slot="title"><i class="el-icon-folder-opened" /><span>需求中心</span></template>
             <el-menu-item index="/demand/forms"
@@ -94,16 +104,6 @@
                   :hidden="!counts.publicationUnread"
                   class="nav-count"
                   title="未读公示数" /></span
-            ></el-menu-item>
-            <el-menu-item v-if="logged" index="/demand/messages"
-              ><i class="el-icon-chat-dot-round" /><span slot="title"
-                >消息中心
-                <el-badge
-                  :value="counts.noticeUnread"
-                  :max="99"
-                  :hidden="!counts.noticeUnread"
-                  class="nav-count"
-                  title="未读消息数" /></span
             ></el-menu-item>
             <el-menu-item v-if="logged && state.documentAccess && !state.global" index="/demand/manage"
               ><i class="el-icon-folder-checked" /><span slot="title">单据管理</span></el-menu-item
