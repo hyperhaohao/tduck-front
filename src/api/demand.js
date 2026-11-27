@@ -106,6 +106,9 @@ export const decideApproval = (id, data) =>
   request.post(`/demand-api/requests/${id}/approval`, data)
 
 export const dingtalkStatus = () => request.get('/demand-api/admin/dingtalk/status')
+export const dingtalkConfig = () => request.get('/demand-api/admin/dingtalk/config')
+export const saveDingtalkConfig = (data) =>
+  request.put('/demand-api/admin/dingtalk/config', data)
 export const saveDingtalkSettings = (data) =>
   request.put('/demand-api/admin/dingtalk/settings', data)
 export const testDingtalkConnection = () => request.post('/demand-api/admin/dingtalk/test-connection')
@@ -117,6 +120,8 @@ export const unbindDingtalkUser = (dingtalkUserId) =>
   request.post(`/demand-api/admin/dingtalk/users/${encodeURIComponent(dingtalkUserId)}/unbind`)
 export const confirmDingtalkUser = (dingtalkUserId) =>
   request.post(`/demand-api/admin/dingtalk/users/${encodeURIComponent(dingtalkUserId)}/confirm`)
+export const setDingtalkCreator = (dingtalkUserId) =>
+  request.post(`/demand-api/admin/dingtalk/users/${encodeURIComponent(dingtalkUserId)}/creator`)
 export const confirmMatchedDingtalk = () =>
   request.post('/demand-api/admin/dingtalk/confirm-matched')
 export const dingtalkLocalUsers = (keyword = '') =>

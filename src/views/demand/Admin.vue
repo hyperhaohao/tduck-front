@@ -275,9 +275,7 @@
               @current-change="loadTable"
             />
           </template></el-tab-pane
-        ><el-tab-pane v-if="isGlobal && mode === 'admin'" label="钉钉推送" name="dingtalk" lazy
-          ><component :is="dingtalkPanel" /></el-tab-pane
-      ></el-tabs>
+        ></el-tabs>
       <el-dialog title="新建需求收集单" :visible.sync="createVisible" :width="dialogWidth" :close-on-click-modal="false"
         ><el-form label-position="top"
           ><el-form-item label="收集单名称"><el-input v-model="createForm.name" maxlength="100" /></el-form-item
@@ -375,161 +373,57 @@
               style="width: 100%" /></el-form-item
           ><el-form-item label="轮次模式"
             ><el-radio-group v-model="config.roundMode"
-              ><el-radio label="NONE">不启用</el-radio
-              ><el-radio label="SINGLE">单轮</el-radio
+              ><el-radio label="SINGLE">不启用轮次</el-radio
               ><el-radio label="PERIODIC">周期</el-radio></el-radio-group
             >
-            <p class="demand-muted">启用后可设置必填人；周期模式到期自动开下一轮。</p></el-form-item
-          ><el-form-item v-if="config.roundMode === 'PERIODIC'" label="轮次周期"
-            ><el-radio-group v-model="config.roundPeriod"
+            <p class="demand-muted">不启用轮次时以整单截止时间为准；周期会按锚点自动开启下一轮。</p></el-form-item
+          ><el-form-item v-if="config.roundMode === 'PERIODIC'" label="周期"
+            ><el-radio-group v-model="config.roundPeriod" @change="roundPeriodChanged"
+              ><el-radio label="DAILY">每天</el-radio
+              ><el-radio label="WEEKLY">每周</el-radio
               ><el-radio label="MONTH">每月</el-radio
-              ><el-radio label="QUARTER">每季</el-radio></el-radio-group
+              ><el-radio label="QUARTER">每季度</el-radio></el-radio-group
             ></el-form-item
-          ><el-form-item v-if="config.roundMode !== 'NONE'" label="本轮截止期限"
-            ><el-date-picker
-              v-model="config.roundEndTime"
-              type="datetime"
-              value-format="yyyy-MM-dd HH:mm:ss"
-              placeholder="单轮必填；周期可留空按周期推算"
-              style="width: 100%" /></el-form-item
+          ><el-form-item
+            v-if="config.roundMode === 'PERIODIC' && config.roundPeriod === 'WEEKLY'"
+            label="每周几"
+            ><el-select v-model="config.roundDay" style="width: 100%"
+              ><el-option v-for="day in weekDays" :key="day.value" :label="day.label" :value="day.value" /></el-select
+          ></el-form-item>
+          <el-form-item
+            v-if="config.roundMode === 'PERIODIC' && (config.roundPeriod === 'MONTH' || config.roundPeriod === 'QUARTER')"
+            label="周期锚点"
+            ><el-radio-group v-model="config.roundAnchorDirection"
+              ><el-radio label="START">从周期开始</el-radio
+              ><el-radio label="END">从周期结束倒数</el-radio
+              ><el-radio label="NONE">不指定（沿用原周期）</el-radio></el-radio-group
+            ><el-input-number
+              v-if="config.roundAnchorDirection !== 'NONE'"
+              v-model="config.roundAnchorDay"
+              :min="1"
+              :max="config.roundPeriod === 'QUARTER' ? 90 : 31"
+              :controls="false"
+              style="width: 100px; margin-left: 10px" /><span
+              v-if="config.roundAnchorDirection !== 'NONE'"
+              class="demand-muted"
+              style="margin-left: 6px"
+              >天（1=第一天/最后一天）</span
+            ></el-form-item
+          ><el-form-item v-if="config.roundMode === 'PERIODIC'" label="本轮截止"
+            ><p class="demand-muted">按周期锚点自动计算，不单独填写。</p></el-form-item
           ><el-form-item v-if="config.roundMode !== 'NONE'" label="提醒方式"
             ><el-radio-group v-model="config.reminderMode"
+              ><el-radio label="NONE">不提醒</el-radio
               ><el-radio label="DEFAULT">截止前提醒</el-radio
               ><el-radio label="STRONG">每日提醒</el-radio></el-radio-group
             ></el-form-item
           ><el-form-item v-if="config.roundMode !== 'NONE'" label="必填人"
-            ><el-button size="small" @click="openRequired">设置必填人与查看名单</el-button>
-            <p class="demand-muted">必填人须在本轮内提交；匿名提交不计入完成。请先保存轮次配置。</p></el-form-item
+            ><p class="demand-muted">必填人在「成员权限」中按人/部门勾选；也可批量开启可填报成员全部必填。</p></el-form-item
           ><el-form-item label="向首页开放"
             ><el-switch v-model="config.published" />
             <p class="demand-muted">须同时在原表单设计器的“发布”页发布，才会进入员工可见列表。</p></el-form-item
           ><el-button type="primary" :loading="saving" @click="saveConfig">保存配置</el-button></el-form
         ></el-drawer
-      >
-      <el-drawer
-        title="必填人设置"
-        :visible.sync="requiredVisible"
-        :size="drawerWidth"
-        custom-class="demand-detail-drawer"
-        ><template v-if="selected"
-          ><h3>{{ plain(selected.name) }}</h3>
-          <p class="demand-muted">
-            轮次：{{ roundModeText }}；本轮截止：{{ requiredEndText }}；提醒：{{
-              requiredData && requiredData.reminderMode === 'STRONG' ? '每日提醒' : '截止前提醒'
-            }}。调整轮次请先在「收集配置」保存。
-          </p>
-          <div class="member-combo">
-            <el-popover
-              ref="requiredPopover"
-              v-model="requiredComboVisible"
-              trigger="manual"
-              placement="bottom-start"
-              :width="requiredPanelWidth"
-              :visible-arrow="false"
-              popper-class="member-tree-popper"
-              @show="syncRequiredPanelWidth"
-            >
-              <div class="member-tree-panel" @keydown.esc.stop="requiredComboVisible = false">
-                <el-tree
-                  ref="requiredTree"
-                  class="member-tree"
-                  :data="comboTree"
-                  node-key="id"
-                  default-expand-all
-                  :indent="mobile ? 12 : 18"
-                  :filter-node-method="filterComboNode"
-                  empty-text="暂无部门或成员"
-                >
-                  <template slot-scope="{ data }"
-                    ><div class="member-tree-row" :class="['is-' + data.type]">
-                      <template v-if="data.type !== 'group'">
-                        <el-tag size="mini" :type="data.type === 'department' ? 'success' : 'info'">{{
-                          data.type === 'department' ? '部门' : '成员'
-                        }}</el-tag>
-                        <span class="member-tree-name" :title="comboNodeTitle(data)">{{ data.name }}</span>
-                        <span class="member-tree-hint">{{ requiredNodeHint(data) }}</span>
-                        <button
-                          type="button"
-                          class="member-tree-circle"
-                          :class="{ 'is-added': isRequiredAdded(data) }"
-                          :disabled="isRequiredAdded(data)"
-                          :aria-label="'添加' + data.name"
-                          @click.stop="addRequiredNode(data)"
-                        >
-                          <i v-if="isRequiredAdded(data)" class="el-icon-check" />
-                        </button>
-                      </template>
-                      <template v-else>
-                        <span class="member-tree-name">{{ data.name }}</span>
-                        <span class="member-tree-hint">{{ data.children.length }} 人</span>
-                      </template>
-                    </div></template
-                  >
-                </el-tree>
-              </div>
-              <el-input
-                slot="reference"
-                ref="requiredInput"
-                v-model="requiredComboText"
-                clearable
-                prefix-icon="el-icon-search"
-                placeholder="搜索部门或成员，点击圆圈添加"
-                @focus="openRequiredCombo"
-                @click.native="openRequiredCombo"
-                @keydown.esc.native.stop="requiredComboVisible = false"
-              />
-            </el-popover>
-            <p class="demand-muted member-combo-tip">部门默认包含下级部门；指定人员收集单会自动补填报权限。</p>
-          </div>
-          <el-checkbox v-model="requiredRequireMembers" class="required-members-toggle"
-            >收集单可填报成员全部计入必填人</el-checkbox
-          >
-          <el-table
-            class="demand-table-compact member-grant-table required-subject-table"
-            :data="requiredSubjects"
-            row-key="rowKey"
-            size="mini"
-            max-height="200"
-          >
-            <el-table-column label="类型" width="70"
-              ><template slot-scope="s">{{ s.row.type === 'DEPT' ? '部门' : '成员' }}</template></el-table-column
-            >
-            <el-table-column prop="name" label="名称" min-width="120" />
-            <el-table-column label="" width="60"
-              ><template slot-scope="s"
-                ><el-button type="text" @click="removeRequiredSubject(s.row)">移除</el-button></template
-              ></el-table-column
-            >
-          </el-table>
-          <p v-if="requiredData" class="required-summary">
-            必填 {{ (requiredData.members || []).length }} 人 · 已提交
-            {{ (requiredData.stats || {}).submitted || 0 }} · 未提交
-            {{ (requiredData.stats || {}).pending || 0 }} · 匿名提交
-            {{ (requiredData.stats || {}).anonymous || 0 }}
-          </p>
-          <el-button type="primary" :loading="requiredSaving" @click="saveRequired">保存必填人</el-button>
-          <h4 class="required-list-title">本轮名单</h4>
-          <el-table
-            v-loading="requiredLoading"
-            class="demand-table-compact required-member-table"
-            :data="(requiredData && requiredData.members) || []"
-            size="mini"
-            max-height="320"
-          >
-            <el-table-column prop="name" label="姓名" width="90" />
-            <el-table-column prop="departments" label="部门" min-width="110" show-overflow-tooltip />
-            <el-table-column label="来源" width="130"
-              ><template slot-scope="s">{{ sourceText(s.row.sources) }}</template></el-table-column
-            >
-            <el-table-column label="状态" width="80"
-              ><template slot-scope="s"
-                ><el-tag size="mini" :type="s.row.submitted ? 'success' : 'danger'">{{
-                  s.row.submitted ? '已提交' : '未提交'
-                }}</el-tag></template
-              ></el-table-column
-            >
-          </el-table>
-        </template></el-drawer
       >
       <el-drawer
         title="成员与权限"
@@ -611,10 +505,13 @@
               >全选可经办</el-checkbox
             ><el-checkbox v-model="selectAllManage" :indeterminate="manageIndeterminate" :disabled="!grantRows.length"
               >全选可管理</el-checkbox
+            ><el-checkbox v-model="selectAllRequired" :indeterminate="requiredIndeterminate" :disabled="!grantRows.length"
+              >全选必填</el-checkbox
             ><el-button type="primary" :loading="bulkSaving" :disabled="!grantRows.length" @click="saveAllGrants"
               >一键保存</el-button
             >
           </div>
+          <div class="member-grant-table-wrap">
           <el-table
             class="demand-table-compact member-grant-table"
             :data="grantRows"
@@ -624,14 +521,14 @@
             :max-height="grantTableMaxHeight"
             empty-text="暂无授权，请先添加成员或部门"
           >
-            <el-table-column v-if="!mobile" label="类型" width="56" align="center">
+            <el-table-column v-if="!mobile" label="类型" width="50" align="center">
               <template slot-scope="s">
                 <el-tag size="mini" :type="s.row.rowType === 'department' ? 'success' : 'info'">{{
                   s.row.rowType === 'department' ? '部门' : '成员'
                 }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="名称" :min-width="mobile ? 90 : 170">
+            <el-table-column label="名称" :min-width="mobile ? 120 : 130">
               <template slot-scope="s">
                 <div class="member-grant-name" :title="grantLabel(s.row)">
                   <el-tag v-if="mobile" size="mini" :type="s.row.rowType === 'department' ? 'success' : 'info'">{{
@@ -642,24 +539,51 @@
                     >（含下级 {{ Number(s.row.memberCount || 0) }} 人）</span
                   >
                 </div>
+                <div v-if="mobile" class="member-grant-flags">
+                  <el-checkbox
+                    v-model="s.row.canFill"
+                    :disabled="s.row.required"
+                    :aria-label="s.row.name + '可填报'"
+                    >填报</el-checkbox
+                  >
+                  <el-checkbox v-model="s.row.canHandle" :aria-label="s.row.name + '可经办'">经办</el-checkbox>
+                  <el-checkbox v-model="s.row.canManage" :aria-label="s.row.name + '可管理/可公示'">管理</el-checkbox>
+                  <el-checkbox
+                    v-model="s.row.required"
+                    :aria-label="s.row.name + '必填'"
+                    @change="onRequiredChange(s.row, $event)"
+                    >必填</el-checkbox
+                  >
+                </div>
               </template>
             </el-table-column>
-            <el-table-column label="填报" :width="mobile ? 44 : 58" align="center">
+            <el-table-column v-if="!mobile" label="填报" width="52" align="center">
               <template slot-scope="s"
-                ><el-checkbox v-model="s.row.canFill" :aria-label="s.row.name + '可填报'"
+                ><el-checkbox
+                  v-model="s.row.canFill"
+                  :disabled="s.row.required"
+                  :aria-label="s.row.name + '可填报'"
               /></template>
             </el-table-column>
-            <el-table-column label="经办" :width="mobile ? 44 : 58" align="center">
+            <el-table-column v-if="!mobile" label="经办" width="52" align="center">
               <template slot-scope="s"
                 ><el-checkbox v-model="s.row.canHandle" :aria-label="s.row.name + '可经办'"
               /></template>
             </el-table-column>
-            <el-table-column label="管理" :width="mobile ? 44 : 58" align="center">
+            <el-table-column v-if="!mobile" label="管理" width="52" align="center">
               <template slot-scope="s"
                 ><el-checkbox v-model="s.row.canManage" :aria-label="s.row.name + '可管理/可公示'"
               /></template>
             </el-table-column>
-            <el-table-column label="操作" :width="mobile ? 60 : 100" align="center">
+            <el-table-column v-if="!mobile" label="必填" width="52" align="center">
+              <template slot-scope="s"
+                ><el-checkbox
+                  v-model="s.row.required"
+                  :aria-label="s.row.name + '必填'"
+                  @change="onRequiredChange(s.row, $event)"
+              /></template>
+            </el-table-column>
+            <el-table-column label="操作" :width="mobile ? 60 : 90" align="center">
               <template slot-scope="s">
                 <div class="member-grant-actions">
                   <el-button type="text" size="mini" :loading="saving" @click="saveGrantRow(s.row)">保存</el-button
@@ -670,6 +594,37 @@
               </template>
             </el-table-column>
           </el-table>
+          </div>
+          <div class="member-required-panel">
+            <div class="member-required-head">
+              <el-checkbox v-model="requiredRequireMembers" @change="saveRequireMembers"
+                >可填报成员全部必填</el-checkbox
+              >
+              <span class="demand-muted"
+                >轮次：{{ roundModeText }}；本轮截止：{{ requiredEndText }}；提醒：{{ reminderText }}</span
+              >
+            </div>
+            <p class="demand-muted">
+              必填 {{ requiredStats.total }} · 已提交 {{ requiredStats.submitted }} · 未提交
+              {{ requiredStats.pending }} · 匿名提交 {{ requiredStats.anonymous }}（匿名不计入完成）
+            </p>
+            <div class="member-required-table-wrap">
+              <el-table :data="requiredMembers" size="mini" empty-text="本轮暂无必填人">
+                <el-table-column prop="name" label="姓名" min-width="90" />
+                <el-table-column prop="departments" label="部门" min-width="120" show-overflow-tooltip />
+                <el-table-column label="来源" min-width="110">
+                  <template slot-scope="s">{{ sourceText(s.row.sources) }}</template>
+                </el-table-column>
+                <el-table-column label="状态" width="80">
+                  <template slot-scope="s">
+                    <el-tag size="mini" :type="s.row.submitted ? 'success' : 'warning'">{{
+                      s.row.submitted ? '已提交' : '未提交'
+                    }}</el-tag>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+          </div>
           <div class="department-tools">
             <span class="demand-muted">部门授权默认包含下级部门；成员数按在职账户统计。</span>
             <el-button v-if="isGlobal" type="text" @click="openDepartmentImport">导入部门目录</el-button>
@@ -761,7 +716,6 @@ import * as api from '@/api/demand'
 import { createFormRequest } from '@/api/project/form'
 import { refreshDemand, decisions, progresses } from '@/utils/demand'
 import DemandDetail from './components/DemandDetail'
-import DingTalkPanel from './components/DingTalkPanel'
 import DemandCardCover from './components/DemandCardCover'
 import FormOverview from './components/FormOverview'
 import exportMixin from './exportMixin'
@@ -770,13 +724,12 @@ export default {
   props: {
     mode: { type: String, default: 'admin' }
   },
-  components: { DemandDetail, DemandCardCover, FormOverview, DingTalkPanel },
+  components: { DemandDetail, DemandCardCover, FormOverview },
   mixins: [exportMixin],
   data() {
     return {
       allowed: false,
       isGlobal: false,
-      dingtalkPanel: DingTalkPanel,
       canCreate: false,
       canDocument: false,
       permissionApi: false,
@@ -799,6 +752,15 @@ export default {
       selected: null,
       config: {},
       configVisible: false,
+      weekDays: [
+        { value: 1, label: '周一' },
+        { value: 2, label: '周二' },
+        { value: 3, label: '周三' },
+        { value: 4, label: '周四' },
+        { value: 5, label: '周五' },
+        { value: 6, label: '周六' },
+        { value: 7, label: '周日' }
+      ],
       membersVisible: false,
       memberRows: [],
       candidates: [],
@@ -915,15 +877,36 @@ export default {
       return Math.max(240, this.viewportHeight - (this.mobile ? 470 : 440))
     },
     roundModeText() {
-      const mode = (this.requiredData && this.requiredData.roundMode) || 'NONE'
-      if (mode === 'SINGLE') return '单轮'
-      if (mode === 'PERIODIC')
-        return '周期（' + ((this.requiredData && this.requiredData.roundPeriod) === 'QUARTER' ? '每季' : '每月') + '）'
-      return '不启用'
+      const data = this.requiredData || {}
+      const mode = data.roundMode || 'SINGLE'
+      if (mode !== 'PERIODIC') return '不启用轮次'
+      if (data.roundPeriod === 'DAILY') return '周期（每天）'
+      if (data.roundPeriod === 'WEEKLY') return '周期（每周）'
+      if (data.roundPeriod === 'QUARTER') return '周期（每季度）'
+      return '周期（每月）'
     },
     requiredEndText() {
-      const end = this.requiredData && this.requiredData.roundEndTime
-      return end ? String(end).replace('T', ' ').substring(0, 16) : '未设置'
+      const data = this.requiredData || {}
+      const end = data.roundDeadline || data.roundEndTime
+      return end ? String(end).replace('T', ' ').substring(0, 16) : '长期有效'
+    },
+    reminderText() {
+      const mode = this.requiredData && this.requiredData.reminderMode
+      if (mode === 'NONE') return '不提醒'
+      return mode === 'STRONG' ? '每日提醒' : '截止前提醒'
+    },
+    requiredStats() {
+      return (
+        (this.requiredData && this.requiredData.stats) || {
+          total: 0,
+          submitted: 0,
+          pending: 0,
+          anonymous: 0
+        }
+      )
+    },
+    requiredMembers() {
+      return (this.requiredData && this.requiredData.members) || []
     },
     selectAllFill: {
       get() {
@@ -931,9 +914,24 @@ export default {
       },
       set(value) {
         this.grantRows.forEach((r) => {
+          if (!value && r.required) return
           r.canFill = value
         })
       }
+    },
+    selectAllRequired: {
+      get() {
+        return this.grantRows.length > 0 && this.grantRows.every((r) => r.required)
+      },
+      set(value) {
+        this.grantRows.forEach((r) => {
+          r.required = value
+          if (value) r.canFill = true
+        })
+      }
+    },
+    requiredIndeterminate() {
+      return !this.selectAllRequired && this.grantRows.some((r) => r.required)
     },
     selectAllHandle: {
       get() {
@@ -1069,6 +1067,12 @@ export default {
     },
     openConfig(form) {
       this.selected = form
+      const period = ['DAILY', 'WEEKLY', 'MONTH', 'QUARTER'].includes(form.roundPeriod)
+        ? form.roundPeriod
+        : 'MONTH'
+      const roundDay = form.roundDay == null ? null : Number(form.roundDay)
+      const weeklyDay =
+        period === 'WEEKLY' ? Math.min(7, Math.max(1, Number(roundDay || 1))) : roundDay
       this.config = {
         summary: form.summary || '',
         visibility: form.visibility || 'LOGIN',
@@ -1076,11 +1080,12 @@ export default {
         allowAnonymous: !!form.allowAnonymous,
         published: !!form.published,
         endTime: form.endTime ? String(form.endTime).replace('T', ' ').substring(0, 19) : null,
-        roundMode: form.roundMode || 'NONE',
-        roundPeriod: form.roundPeriod || 'MONTH',
-        roundEndTime: form.roundEndTime
-          ? String(form.roundEndTime).replace('T', ' ').substring(0, 19)
-          : null,
+        roundMode: form.roundMode === 'PERIODIC' ? 'PERIODIC' : 'SINGLE',
+        roundPeriod: period,
+        roundDay: weeklyDay,
+        roundAnchorDirection:
+          period === 'WEEKLY' ? 'START' : roundDay == null ? 'NONE' : roundDay < 0 ? 'END' : 'START',
+        roundAnchorDay: roundDay == null ? 1 : Math.max(1, Math.abs(roundDay)),
         reminderMode: form.reminderMode || 'DEFAULT',
         requireMembers: !!form.requireMembers,
         approvalMode: form.approvalMode || (form.requiresLeaderApproval ? 'DIRECT' : 'NONE'),
@@ -1089,6 +1094,19 @@ export default {
       }
       this.configVisible = true
     },
+    roundPeriodChanged(period) {
+      if (period === 'WEEKLY') {
+        const day = Number(this.config.roundDay)
+        if (!day || day < 1 || day > 7) this.config.roundDay = 1
+      } else if (period === 'MONTH' || period === 'QUARTER') {
+        const max = period === 'QUARTER' ? 90 : 31
+        const day = Number(this.config.roundAnchorDay)
+        if (!day || day < 1 || day > max) this.config.roundAnchorDay = 1
+        if (!['START', 'END', 'NONE'].includes(this.config.roundAnchorDirection)) {
+          this.config.roundAnchorDirection = 'START'
+        }
+      }
+    },
     approvalModeChanged(value) {
       if (value !== 'NONE') this.config.allowAnonymous = false
     },
@@ -1096,12 +1114,40 @@ export default {
       if (value === 'SELECTED') this.config.allowAnonymous = false
     },
     async saveConfig() {
+      const roundMode = this.config.roundMode === 'PERIODIC' ? 'PERIODIC' : 'SINGLE'
+      const payload = {
+        ...this.config,
+        roundMode,
+        requiresLeaderApproval: this.config.approvalMode !== 'NONE'
+      }
+      delete payload.roundEndTime
+      delete payload.requireMembers
+      if (roundMode === 'SINGLE') {
+        payload.roundPeriod = null
+        payload.roundDay = null
+      } else {
+        payload.roundPeriod = this.config.roundPeriod || 'MONTH'
+        if (payload.roundPeriod === 'WEEKLY') {
+          const day = Number(this.config.roundDay)
+          if (!day || day < 1 || day > 7) return this.$message.warning('请选择每周几')
+          payload.roundDay = day
+        } else if (payload.roundPeriod === 'MONTH' || payload.roundPeriod === 'QUARTER') {
+          if (this.config.roundAnchorDirection === 'NONE') {
+            // 历史周期未设置锚点时保持空值，后端沿用原按月/季推进，不重置进行中的轮次。
+            payload.roundDay = null
+          } else {
+            const max = payload.roundPeriod === 'QUARTER' ? 90 : 31
+            const day = Number(this.config.roundAnchorDay || 0)
+            if (!day || day < 1 || day > max) return this.$message.warning(`请填写 1-${max} 的锚点天数`)
+            payload.roundDay = this.config.roundAnchorDirection === 'END' ? -day : day
+          }
+        } else {
+          payload.roundDay = null
+        }
+      }
       this.saving = true
       try {
-        await api.configureForm(this.selected.formKey, {
-          ...this.config,
-          requiresLeaderApproval: this.config.approvalMode !== 'NONE'
-        })
+        await api.configureForm(this.selected.formKey, payload)
         this.$message.success('配置已保存')
         this.configVisible = false
         await this.load()
@@ -1331,22 +1377,34 @@ export default {
         return
       }
       this.selected = form
+      this.requiredData = null
+      this.requiredSubjects = []
+      this.requiredRequireMembers = false
       const [members, departments, departmentRows, roster] = await Promise.all([
         api.members(form.formKey),
         api.departments(),
         api.departmentMembers(form.formKey),
         api.departmentRoster()
       ])
-      this.memberRows = (members.data || []).map((m) => ({ ...m, rowType: 'member' }))
+      const selectedOnly = form.visibility === 'SELECTED'
+      this.memberRows = (members.data || []).map((m) => ({
+        ...m,
+        canFill: selectedOnly && m.required ? true : !!m.canFill,
+        required: !!m.required,
+        rowType: 'member'
+      }))
       this.departmentList = departments.data || []
       this.departmentRoster = roster.data || []
       this.departmentRows = (departmentRows.data || []).map((d) => ({
         ...d,
+        canFill: selectedOnly && d.required ? true : !!d.canFill,
+        required: !!d.required,
         rowType: 'department'
       }))
       this.comboText = ''
       this.comboVisible = false
       this.membersVisible = true
+      await this.loadRequired()
     },
     async searchUsers(keyword) {
       this.candidates = (await api.users(keyword)).data
@@ -1442,7 +1500,8 @@ export default {
           rowType: 'department',
           canFill: false,
           canHandle: false,
-          canManage: false
+          canManage: false,
+          required: false
         })
       } else if (item.type === 'user') {
         if (this.memberRows.some((row) => String(row.userId) === String(item.key)))
@@ -1454,7 +1513,8 @@ export default {
           rowType: 'member',
           canFill: false,
           canHandle: false,
-          canManage: false
+          canManage: false,
+          required: false
         })
       }
       this.$nextTick(() => {
@@ -1470,13 +1530,32 @@ export default {
         : row.name
     },
     grantPayload(row) {
-      return { canFill: !!row.canFill, canHandle: !!row.canHandle, canManage: !!row.canManage }
+      return {
+        canFill: !!row.canFill,
+        canHandle: !!row.canHandle,
+        canManage: !!row.canManage,
+        required: !!row.required
+      }
     },
     persistGrant(row) {
       const payload = this.grantPayload(row)
       return row.rowType === 'department'
         ? api.saveDepartmentMember(this.selected.formKey, row.deptKey, payload)
         : api.saveMember(this.selected.formKey, row.userId, payload)
+    },
+    onRequiredChange(row, value) {
+      if (value) row.canFill = true
+    },
+    async saveRequireMembers(value) {
+      if (!this.selected) return
+      try {
+        await api.saveRequiredMembers(this.selected.formKey, { requireMembers: !!value })
+        this.$message.success(value ? '已开启可填报成员全部必填' : '已关闭批量必填')
+        await this.loadRequired()
+      } catch (e) {
+        this.requiredRequireMembers = !value
+        this.$message.error(e.msg || '批量必填保存失败')
+      }
     },
     async saveGrantRow(row) {
       if (!this.hasManager)
@@ -1485,6 +1564,7 @@ export default {
       try {
         await this.persistGrant(row)
         this.$message.success(row.rowType === 'department' ? '部门权限已保存' : '成员权限已保存')
+        await this.loadRequired()
         window.dispatchEvent(new Event('demand-updated'))
       } finally {
         this.saving = false
@@ -1514,6 +1594,7 @@ export default {
         }
         if (failed) this.$message.warning(`已保存 ${saved} 项，${failed} 项保存失败，请重试`)
         else this.$message.success('成员与部门权限已保存')
+        await this.loadRequired()
         window.dispatchEvent(new Event('demand-updated'))
       } finally {
         this.bulkSaving = false
@@ -1540,6 +1621,7 @@ export default {
           this.memberRows = this.memberRows.filter((m) => m.userId !== row.userId)
         }
         this.$message.success(`${kind}授权已移除`)
+        await this.loadRequired()
         window.dispatchEvent(new Event('demand-updated'))
       } finally {
         this.saving = false
@@ -1895,13 +1977,41 @@ export default {
   padding: 12px 0;
   flex-wrap: wrap;
 }
+.member-required-panel {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid #ebeef5;
+}
+.member-required-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.member-required-table-wrap {
+  overflow-x: auto;
+}
 .member-row strong {
   flex: 1 1 180px;
   min-width: 0;
 }
+.member-grant-table-wrap {
+  overflow-x: auto;
+}
 .member-grant-table {
   width: 100%;
   margin: 4px 0 8px;
+}
+.member-grant-flags {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(64px, 1fr));
+  gap: 2px 8px;
+  margin-top: 4px;
+}
+.member-grant-flags .el-checkbox {
+  margin-right: 0;
 }
 .member-grant-name {
   display: flex;

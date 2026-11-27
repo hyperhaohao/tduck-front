@@ -60,6 +60,9 @@
                 class="nav-count"
                 title="未读消息数" /></span
           ></el-menu-item>
+          <el-menu-item v-if="logged && state.global" index="/demand/dingtalk"
+            ><i class="el-icon-chat-line-square" /><span slot="title">钉钉配置</span></el-menu-item
+          >
           <el-submenu index="center">
             <template slot="title"><i class="el-icon-folder-opened" /><span>需求中心</span></template>
             <el-menu-item index="/demand/forms"

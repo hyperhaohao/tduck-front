@@ -1,5 +1,57 @@
 <template>
   <section class="dingtalk-panel" v-loading="loading">
+    <article class="dingtalk-card dingtalk-config-card">
+      <div class="dingtalk-card-head">
+        <strong>应用配置</strong>
+        <el-tag size="small" :type="status.configured && status.masterEnabled ? 'success' : 'info'">{{
+          status.configured && status.masterEnabled ? '已启用' : '未完成'
+        }}</el-tag>
+      </div>
+      <el-form label-position="top" class="dingtalk-config-form">
+        <el-form-item label="AppKey（Client ID）">
+          <el-input
+            v-model="configForm.appKey"
+            size="small"
+            maxlength="100"
+            placeholder="企业内部应用 AppKey"
+          />
+        </el-form-item>
+        <el-form-item label="AppSecret">
+          <el-input
+            v-model="configForm.appSecret"
+            size="small"
+            type="password"
+            show-password
+            maxlength="200"
+            :placeholder="config.secretConfigured ? '已配置，留空不修改' : '请输入 AppSecret'"
+          />
+        </el-form-item>
+        <el-form-item label="AgentId">
+          <el-input
+            v-model="configForm.agentId"
+            size="small"
+            type="number"
+            placeholder="例如 5165258519"
+          />
+        </el-form-item>
+        <el-form-item label="链接基址">
+          <el-input
+            v-model="configForm.linkBase"
+            size="small"
+            placeholder="http://192.168.1.240:18000"
+          />
+        </el-form-item>
+        <el-form-item label="部署总开关">
+          <el-switch v-model="configForm.enabled" active-text="允许调用钉钉" />
+        </el-form-item>
+      </el-form>
+      <div class="detail-actions">
+        <el-button type="primary" size="small" :loading="configSaving" @click="saveConfig"
+          >保存应用配置</el-button
+        >
+        <span class="demand-muted">密钥只写入服务器受控文件，接口不回显。</span>
+      </div>
+    </article>
     <div class="dingtalk-grid">
       <article class="dingtalk-card">
         <div class="dingtalk-card-head">
@@ -116,8 +168,16 @@
                 }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="170">
+            <el-table-column label="操作" width="230">
               <template slot-scope="s">
+                <el-tag v-if="s.row.creator" size="mini" type="success">创建人</el-tag>
+                <el-button
+                  v-else-if="s.row.status === 'CONFIRMED' && s.row.unionId"
+                  type="text"
+                  size="mini"
+                  @click="setCreator(s.row)"
+                  >设为创建人</el-button
+                >
                 <el-button
                   v-if="s.row.status === 'PENDING_CONFIRM'"
                   type="text"
@@ -246,7 +306,10 @@ export default {
       saving: false,
       syncing: false,
       testing: false,
+      configSaving: false,
       status: {},
+      config: {},
+      configForm: { enabled: false, appKey: '', appSecret: '', agentId: '', linkBase: '' },
       mappingCounts: {},
       syncResult: null,
       form: { enabled: false, quietStart: '20:00', quietEnd: '08:00' },
@@ -335,8 +398,52 @@ export default {
           events[kind] = { work: !!current.work, todo: !!current.todo }
         })
         this.events = events
+        const configResponse = await api.dingtalkConfig()
+        const config = configResponse.data || {}
+        this.config = config
+        this.configForm = {
+          enabled: !!config.enabled,
+          appKey: config.appKey || '',
+          appSecret: '',
+          agentId: config.agentId ? String(config.agentId) : '',
+          linkBase: config.linkBase || data.linkBase || window.location.origin
+        }
       } finally {
         this.loading = false
+      }
+    },
+    async saveConfig() {
+      if (!this.configForm.appKey.trim()) {
+        this.$message.warning('请填写 AppKey')
+        return
+      }
+      if (!this.configForm.agentId || Number(this.configForm.agentId) <= 0) {
+        this.$message.warning('请填写有效的 AgentId')
+        return
+      }
+      if (!this.configForm.linkBase.trim()) {
+        this.$message.warning('请填写链接基址')
+        return
+      }
+      if (!this.configForm.appSecret && !this.config.secretConfigured) {
+        this.$message.warning('请填写 AppSecret')
+        return
+      }
+      this.configSaving = true
+      try {
+        const payload = {
+          enabled: !!this.configForm.enabled,
+          appKey: this.configForm.appKey.trim(),
+          agentId: Number(this.configForm.agentId),
+          linkBase: this.configForm.linkBase.trim()
+        }
+        if (this.configForm.appSecret) payload.appSecret = this.configForm.appSecret
+        await api.saveDingtalkConfig(payload)
+        this.$message.success('钉钉应用配置已保存')
+        this.configForm.appSecret = ''
+        await this.load()
+      } finally {
+        this.configSaving = false
       }
     },
     async saveSettings() {
@@ -392,11 +499,23 @@ export default {
       try {
         const response = await api.testDingtalk()
         const data = response.data || {}
-        this.$message.success(
-          `已发送：工作通知 ${data.taskId || '已提交'}${
-            data.todoTaskId ? '，待办 ' + data.todoTaskId : ''
-          }`
-        )
+        if (data.todoStatus === 'FAILED') {
+          this.$message.warning(
+            `工作通知已发送（${data.taskId || '已提交'}），但钉钉待办创建失败：${
+              data.todoError || '未知错误'
+            }`
+          )
+        } else if (data.todoStatus === 'SKIPPED') {
+          this.$message.warning(
+            `工作通知已发送（${data.taskId || '已提交'}）；待办未创建：${data.todoError || '未配置'}`
+          )
+        } else {
+          this.$message.success(
+            `已发送：工作通知 ${data.taskId || '已提交'}${
+              data.todoTaskId ? '，待办 ' + data.todoTaskId : ''
+            }`
+          )
+        }
         await this.loadPushes()
       } finally {
         this.testing = false
@@ -419,6 +538,21 @@ export default {
       if (status === 'PENDING_CONFIRM' || status === 'PENDING' || status === 'SENDING') return 'warning'
       if (status === 'CONFLICT' || status === 'FAILED' || status === 'DEAD') return 'danger'
       return 'info'
+    },
+    async setCreator(row) {
+      try {
+        await this.$confirm(
+          `将 ${row.name} 设为钉钉待办的创建人？审批和待填报待办将以该账号名义创建。`,
+          '设置待办创建人',
+          { type: 'warning' }
+        )
+      } catch (error) {
+        return
+      }
+      await api.setDingtalkCreator(row.dingtalkUserId)
+      this.$message.success('待办创建人已更新')
+      await this.load()
+      await this.loadUsers()
     },
     async confirmUser(row) {
       await api.confirmDingtalkUser(row.dingtalkUserId)
@@ -510,6 +644,17 @@ export default {
   border-radius: 12px;
   background: #fff;
 }
+.dingtalk-config-card {
+  grid-column: 1 / -1;
+}
+.dingtalk-config-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 16px;
+}
+.dingtalk-config-form .el-form-item {
+  margin-bottom: 12px;
+}
 .dingtalk-card-head {
   display: flex;
   flex-wrap: wrap;
@@ -549,7 +694,8 @@ export default {
 }
 @media (max-width: 1023px) {
   .dingtalk-grid,
-  .event-grid {
+  .event-grid,
+  .dingtalk-config-form {
     grid-template-columns: 1fr;
   }
   .dingtalk-panel {

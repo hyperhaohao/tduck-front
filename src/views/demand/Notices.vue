@@ -94,7 +94,7 @@ export default {
       page: 1,
       size: 20,
       kind: '',
-      filter: 'all',
+      filter: 'unread',
       loading: false,
       error: '',
       kindLabels
@@ -249,8 +249,9 @@ export default {
   line-height: 1.6;
   overflow: hidden;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
+  white-space: pre-line;
   word-break: break-all;
 }
 .notice-empty {
@@ -278,7 +279,7 @@ export default {
     margin-left: 0;
   }
   .notice-content {
-    -webkit-line-clamp: 3;
+    -webkit-line-clamp: 4;
   }
 }
 </style>

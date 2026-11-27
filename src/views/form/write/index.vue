@@ -26,8 +26,12 @@
       </p>
       <p v-if="demandMeta.requiredOfMe" class="demand-mode-hint demand-required-hint">
         您是本轮必填人{{
-          demandMeta.roundEndTime
-            ? '，请在 ' + String(demandMeta.roundEndTime).replace('T', ' ').substring(0, 16) + ' 前提交'
+          demandMeta.roundDeadline || demandMeta.roundEndTime
+            ? '，请在 ' +
+              String(demandMeta.roundDeadline || demandMeta.roundEndTime)
+                .replace('T', ' ')
+                .substring(0, 16) +
+              ' 前提交'
             : ''
         }}；匿名提交不计入必填完成。
       </p>
@@ -197,7 +201,7 @@ export default {
         await this.getWxAuthorizationUserInfo()
       }
       // 微信逻辑授权结束 授权地址
-      this.getWxAuthorizationUrl()
+      // 授权地址在确认需要微信授权后再获取，避免空地址触发页面反复刷新。
       // 检查是否能进入填写
       this.queryProjectSettingStatus()
       // 查询相关设置 检查是否能打开等
@@ -274,13 +278,15 @@ export default {
         }
       })
     },
-    getWxAuthorizationUrl() {
+    async getWxAuthorizationUrl() {
       // 获取微信授权url地址
-      getAuthorizationUrl({ url: window.location.href }).then((res) => {
-        if (res.data) {
-          this.wxAuthorizationUrl = res.data
-        }
-      })
+      try {
+        const res = await getAuthorizationUrl({ url: window.location.href })
+        this.wxAuthorizationUrl = String((res && res.data) || '').trim()
+      } catch (e) {
+        this.wxAuthorizationUrl = ''
+      }
+      return this.wxAuthorizationUrl
     },
     async queryProjectSetting() {
       // 填写设置
@@ -293,10 +299,18 @@ export default {
         this.checkDeviceWriteLimit()
         // 仅在微信环境打开
         if (res.data && res.data.onlyWxWrite) {
-          // 记录微信用户信息
-          if (res.data.recordWxUser && !this.wxAuthorizationCode) {
+          if (!isWxEnv()) {
+            // 非微信环境不再尝试空授权地址跳转，避免 location.href='' 造成页面反复刷新。
+            onlyWxOpenHandle()
+          } else if (res.data.recordWxUser && !this.wxAuthorizationCode) {
+            // 记录微信用户信息
             if (Object.keys(this.wxUserInfo).length === 0) {
-              location.href = this.wxAuthorizationUrl
+              const authorizationUrl = await this.getWxAuthorizationUrl()
+              if (authorizationUrl && authorizationUrl !== window.location.href) {
+                location.replace(authorizationUrl)
+              } else {
+                onlyWxOpenHandle()
+              }
             }
           } else {
             onlyWxOpenHandle()

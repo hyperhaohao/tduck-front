@@ -95,11 +95,21 @@ const dingtalkStatusSeed = {
 }
 const dingtalkUsersSeed = {
   rows: [
-    { dingtalkUserId: 'ding-1', name: '钉钉甲', deptNames: '技术部', emailMasked: 'ab***@example.com', localName: '测试经办人', status: 'CONFIRMED' },
-    { dingtalkUserId: 'ding-2', name: '钉钉乙', deptNames: '研发组', emailMasked: 'cd***@example.com', localName: null, status: 'PENDING_CONFIRM' }
+    { dingtalkUserId: 'ding-1', unionId: 'union-1', name: '钉钉甲', deptNames: '技术部', emailMasked: 'ab***@example.com', localName: '测试经办人', status: 'CONFIRMED', creator: false },
+    { dingtalkUserId: 'ding-2', unionId: 'union-2', name: '钉钉乙', deptNames: '研发组', emailMasked: 'cd***@example.com', localName: null, status: 'PENDING_CONFIRM', creator: false }
   ],
   total: 2,
   counts: { total: 2, confirmed: 1, PENDING_CONFIRM: 1, UNMATCHED: 0, CONFLICT: 0 }
+}
+const dingtalkConfigSeed = {
+  enabled: true,
+  appKey: 'ding-test-key',
+  secretConfigured: true,
+  agentId: 123456,
+  linkBase: 'http://example.test',
+  todoEnabled: true,
+  creatorUserId: '30',
+  creatorUnionId: 'union-1'
 }
 const dingtalkPushesSeed = {
   rows: [
@@ -113,6 +123,7 @@ const dingtalkLocalSeed = {
   rows: [{ userId: '30', name: '测试经办人', emailMasked: 'ab***@example.com', bound: false }]
 }
 let dingtalkStatus = null
+let dingtalkConfig = null
 let dingtalkUsers = null
 let dingtalkPushes = null
 let requiredSettings = null
@@ -155,12 +166,15 @@ async function mockApi(page, role = 'all', opts = {}) {
     requiredOfMe: !!opts.required && item.formKey === 'A',
     requiredSubmitted: !!opts.required && !!opts.requiredSubmitted && item.formKey === 'A',
     roundMode: opts.required && item.formKey === 'A' ? 'SINGLE' : 'NONE',
+    endTime: opts.required && item.formKey === 'A' ? '2026-12-31 18:00:00' : null,
     roundEndTime: opts.required && item.formKey === 'A' ? '2026-12-31 18:00:00' : null,
+    roundDeadline: opts.required && item.formKey === 'A' ? '2026-12-31 18:00:00' : null,
     reminderMode: 'DEFAULT',
     requireMembers: false
   }))
   noticeRows = noticeSeed.map(item => ({ ...item }))
   dingtalkStatus = JSON.parse(JSON.stringify(dingtalkStatusSeed))
+  dingtalkConfig = JSON.parse(JSON.stringify(dingtalkConfigSeed))
   dingtalkUsers = JSON.parse(JSON.stringify(dingtalkUsersSeed))
   dingtalkPushes = JSON.parse(JSON.stringify(dingtalkPushesSeed))
   requiredSettings = {
@@ -185,7 +199,7 @@ async function mockApi(page, role = 'all', opts = {}) {
   }
   calls = []
   departmentGrants = [{ deptKey: 'D1', name: '技术部', memberCount: 3, canFill: false, canHandle: false, canManage: !opts.noDeptManager }]
-  memberGrants = [{ userId: '30', name: '测试经办人', canFill: true, canHandle: true, canManage: true }]
+  memberGrants = [{ userId: '30', name: '测试经办人', canFill: !opts.noMemberFill, canHandle: true, canManage: true }]
   permissionUsers = (opts.permissionUsers || []).map((user) => ({ ...user, capabilities: [...(user.capabilities || [])] }))
   departments = departmentSeed.map(item => ({ ...item }))
   departmentRoster = departmentRosterSeed.map(item => ({ ...item }))
@@ -444,6 +458,13 @@ async function mockApi(page, role = 'all', opts = {}) {
       calls.push({ type: 'readAllNotices' })
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, data: null, msg: null }) })
     }
+    if (api === '/demand-api/admin/dingtalk/config' && route.request().method() === 'PUT') {
+      const body = route.request().postDataJSON() || {}
+      calls.push({ type: 'saveDingtalkConfig', body })
+      Object.assign(dingtalkConfig, body)
+      if (body.appSecret) dingtalkConfig.secretConfigured = true
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, data: dingtalkConfig, msg: null }) })
+    }
     if (api === '/demand-api/admin/dingtalk/settings' && route.request().method() === 'PUT') {
       const body = route.request().postDataJSON() || {}
       calls.push({ type: 'saveDingtalk', body })
@@ -467,7 +488,7 @@ async function mockApi(page, role = 'all', opts = {}) {
       calls.push({ type: 'confirmMatchedDingtalk' })
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, data: 1, msg: null }) })
     }
-    if (/^\/demand-api\/admin\/dingtalk\/users\/[^/]+\/(confirm|bind|unbind)$/.test(api) && route.request().method() === 'POST') {
+    if (/^\/demand-api\/admin\/dingtalk\/users\/[^/]+\/(confirm|bind|unbind|creator)$/.test(api) && route.request().method() === 'POST') {
       const parts = api.split('/'); calls.push({ type: 'dingtalkUserAction', action: parts[6], id: decodeURIComponent(parts[5]) })
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, data: true, msg: null }) })
     }
@@ -496,6 +517,7 @@ async function mockApi(page, role = 'all', opts = {}) {
       data = visible.map((f) => ({ ...f, voided: options.voidedKey === f.formKey }))
     }
     else if (api === '/demand-api/admin/dingtalk/status') data = dingtalkStatus
+    else if (api === '/demand-api/admin/dingtalk/config') data = dingtalkConfig
     else if (api === '/demand-api/admin/dingtalk/users') data = dingtalkUsers
     else if (api === '/demand-api/admin/dingtalk/pushes') data = dingtalkPushes
     else if (api === '/demand-api/admin/dingtalk/local-users') data = dingtalkLocalSeed
@@ -752,6 +774,29 @@ test('anonymous lookup requires code and never exposes handler controls', async 
 test('write defaults to login and anonymous mode is optional', async ({ page }) => {
   await mockApi(page); const errors = []; page.on('pageerror', e => errors.push(e.message)); await page.goto('/s/A'); await expect(page.getByRole('button', { name: '登录并开始填写' })).toBeVisible(); await expect(page.getByText('匿名填写', { exact: true })).toBeVisible(); await expect(page.locator('.form-container')).toHaveCount(0); expect(errors).toEqual([])
   await page.getByText('匿名填写', { exact: true }).click(); await expect(page.getByRole('button', { name: '登录并开始填写' })).toHaveCount(0); await expect(page.getByText('本次匿名提交，不关联登录账户。提交后请保存查询码。')).toBeVisible()
+})
+test('wechat-only form shows guidance instead of reload loop outside wechat', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 }); await login(page)
+  let navigations = 0
+  page.on('framenavigated', (frame) => { if (frame === page.mainFrame()) navigations += 1 })
+  await page.route('**/*', async (route) => {
+    const request = route.request()
+    const url = new URL(request.url())
+    if (url.hostname !== '127.0.0.1' || !['xhr', 'fetch'].includes(request.resourceType())) return route.continue()
+    const api = url.pathname.replace(/^\/tduck-api/, '')
+    let data = {}
+    if (api === '/demand-api/forms/A') data = { managed: true, allowAnonymous: false, requiredOfMe: false, roundDeadline: null }
+    else if (api === '/user/form/public/settings/A') data = { onlyWxWrite: true, recordWxUser: true, passwordWriteStatus: false, submitShowType: 0 }
+    else if (api === '/user/form/setting-status') data = true
+    else if (api === '/wx/jsapi/authorization/url') data = null
+    else if (api === '/user/form/details/A') data = { form: { formKey: 'A', name: '测试表单', type: 1 }, formItems: [], userFormTheme: null }
+    else if (api.startsWith('/user/form/data/view/')) data = null
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, data, msg: null }) })
+  })
+  await page.goto('/s/A')
+  await expect(page.getByText('请在微信客户端打开链接', { exact: true })).toBeVisible()
+  await page.waitForTimeout(800)
+  expect(navigations).toBe(1)
 })
 test('global admin saves home collection order', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 }); await login(page); await mockApi(page)
@@ -1500,7 +1545,7 @@ test('admin collection config saves collect-only mode', async ({ page }) => {
   const toggle = drawer.locator('.el-form-item').filter({ hasText: '只收集' }).locator('.el-switch')
   await expect(toggle).toBeVisible(); await toggle.click()
   await drawer.getByRole('button', { name: '保存配置' }).click()
-  await expect(page.getByText('配置已保存', { exact: true })).toBeVisible()
+  await expect(page.getByText('配置已保存', { exact: true }).first()).toBeVisible()
   const saved = calls.find((c) => c.type === 'configure' && c.key === 'A')
   expect(saved.body.collectOnly).toBe(true)
 })
@@ -1545,6 +1590,9 @@ test('header bell shows notice unread and opens message center', async ({ page }
   await expect(page).toHaveURL(/\/demand\/messages$/)
   await expect(page.getByRole('heading', { name: '消息中心', exact: true })).toBeVisible()
   await expect(page.getByText('新公示：设备维护记录查询优化', { exact: true })).toBeVisible()
+  await expect(page.locator('.demand-toolbar .el-radio-button.is-active')).toContainText('未读')
+  await expect(page.locator('.notice-row')).toHaveCount(2)
+  await page.locator('.demand-toolbar .el-radio-button').filter({ hasText: '全部' }).click()
   await expect(page.locator('.notice-row')).toHaveCount(3)
   await noOverflow(page)
 })
@@ -1593,26 +1641,137 @@ test('message center filters by unread and kind', async ({ page }) => {
   await expect(page.getByText('您的需求有新回复', { exact: true })).toBeVisible()
 })
 
-test('admin round config and required members save', async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 1000 }); await login(page); await mockApi(page, 'all', { required: true })
+test('message center shows multi-line new demand content', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 })
+  await login(page)
+  await mockApi(page)
+  await page.route('**/demand-api/notices*', async (route) => {
+    const url = new URL(route.request().url())
+    if (url.pathname !== '/demand-api/notices') return route.fallback()
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        code: 200,
+        msg: null,
+        data: {
+          rows: [{
+            id: 'notice-multi',
+            kind: 'NEW_DEMAND',
+            formKey: 'A',
+            demandId: 'demand-1',
+            publicationId: null,
+            title: '有新的需求待处理',
+            content: '单据：员工满意度与体验反馈调查\n填报人：王浩 · 部门：总部 / 技术部\n时间：2026-11-26 19:40',
+            unread: true,
+            createTime: '2026-11-26 19:40:00'
+          }],
+          total: 1,
+          page: 1,
+          size: 20,
+          unread: 1
+        }
+      })
+    })
+  })
+  await page.goto('/demand/messages')
+  const content = page.locator('.notice-content').first()
+  await expect(content).toContainText('单据：员工满意度与体验反馈调查')
+  await expect(content).toContainText('时间：2026-11-26 19:40')
+  const metrics = await content.evaluate((el) => {
+    const style = getComputedStyle(el)
+    return {
+      whiteSpace: style.whiteSpace,
+      lines: Math.round(el.getBoundingClientRect().height / parseFloat(style.lineHeight))
+    }
+  })
+  expect(metrics.whiteSpace).toBe('pre-line')
+  expect(metrics.lines).toBeGreaterThanOrEqual(3)
+  await noOverflow(page)
+})
+
+test('admin round config and unified member required save', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 }); await login(page); await mockApi(page, 'all', { required: true, noMemberFill: true })
   await page.goto('/demand/admin'); await page.getByRole('button', { name: '收集配置' }).first().click()
   const drawer = page.locator('.el-drawer').filter({ hasText: '轮次模式' })
-  await expect(drawer.getByText('本轮截止期限', { exact: true })).toBeVisible()
+  await expect(drawer.getByText('不启用轮次', { exact: true })).toBeVisible()
+  await expect(drawer.getByText('本轮截止期限', { exact: true })).toHaveCount(0)
+  await expect(drawer.getByText('不提醒', { exact: true })).toBeVisible()
   await drawer.getByRole('button', { name: '保存配置' }).click()
-  await expect(page.getByText('配置已保存', { exact: true })).toBeVisible()
+  await expect(page.getByText('配置已保存', { exact: true }).first()).toBeVisible()
   const saved = calls.find(c => c.type === 'configure' && c.key === 'A')
   expect(saved.body.roundMode).toBe('SINGLE')
-  expect(saved.body.roundEndTime).toBe('2026-12-31 18:00:00')
+  expect(saved.body.roundDay).toBe(null)
+
   await page.getByRole('button', { name: '收集配置' }).first().click()
-  await page.getByRole('button', { name: '设置必填人与查看名单' }).click()
-  const required = page.locator('.el-drawer').filter({ hasText: '必填人设置' })
-  await expect(required.getByText('测试经办人', { exact: false }).first()).toBeVisible()
-  await expect(required.getByText('未提交', { exact: true }).first()).toBeVisible()
-  await required.locator('.required-members-toggle').click()
-  await required.getByRole('button', { name: '保存必填人' }).click()
-  await expect(page.getByText('必填人已保存', { exact: true })).toBeVisible()
-  const requiredSave = calls.find(c => c.type === 'saveRequiredMembers' && c.key === 'A')
-  expect(requiredSave.body.requireMembers).toBe(true)
+  const periodic = page.locator('.el-drawer').filter({ hasText: '轮次模式' })
+  await periodic.locator('.el-radio').filter({ hasText: '周期' }).first().click()
+  await periodic.locator('.el-radio').filter({ hasText: '每月' }).first().click()
+  await expect(
+    periodic.locator('.el-radio.is-checked').filter({ hasText: '不指定（沿用原周期）' })
+  ).toBeVisible()
+  await periodic.locator('.el-radio').filter({ hasText: '从周期结束倒数' }).first().click()
+  await periodic.getByRole('button', { name: '保存配置' }).click()
+  await expect(page.getByText('配置已保存', { exact: true }).first()).toBeVisible()
+  const periodicSaved = calls.filter(c => c.type === 'configure' && c.key === 'A').pop()
+  expect(periodicSaved.body.roundMode).toBe('PERIODIC')
+  expect(periodicSaved.body.roundPeriod).toBe('MONTH')
+  expect(periodicSaved.body.roundDay).toBe(-1)
+
+  await page.getByRole('button', { name: '成员权限' }).first().click()
+  const members = page.locator('.el-drawer').filter({ hasText: '成员与权限' })
+  await expect(members.getByText('全选必填', { exact: true })).toBeVisible()
+  const row = members.locator('.member-grant-table .el-table__row').filter({ hasText: '测试经办人' }).first()
+  const fill = row.locator('.el-checkbox').nth(0)
+  await expect(fill).not.toHaveClass(/is-checked/)
+  await row.locator('.el-checkbox').nth(3).click()
+  await expect(fill).toHaveClass(/is-checked/)
+  await expect(fill.locator('input')).toBeDisabled()
+  await members.getByRole('button', { name: '一键保存' }).click()
+  await expect(page.getByText('成员与部门权限已保存', { exact: true })).toBeVisible()
+  const memberSaved = calls.find(c => c.type === 'member' && String(c.memberId) === '30' && c.body.required)
+  expect(memberSaved).toBeTruthy()
+  expect(memberSaved.body.canFill).toBe(true)
+  await members.locator('.member-required-head .el-checkbox').first().click()
+  await expect.poll(() => calls.some(c => c.type === 'saveRequiredMembers' && c.body.requireMembers)).toBe(true)
+  await noOverflow(page)
+})
+
+test('admin bulk required also selects and locks member fill', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 }); await login(page); await mockApi(page, 'all', { required: true, noMemberFill: true })
+  await page.goto('/demand/admin')
+  await page.getByRole('button', { name: '成员权限' }).first().click()
+  const members = page.locator('.el-drawer').filter({ hasText: '成员与权限' })
+  await expect(members.getByText('全选必填', { exact: true })).toBeVisible()
+  const row = members.locator('.member-grant-table .el-table__row').filter({ hasText: '测试经办人' }).first()
+  const fill = row.locator('.el-checkbox').nth(0)
+  await expect(fill).not.toHaveClass(/is-checked/)
+  await members.locator('.member-bulk-bar .el-checkbox').filter({ hasText: '全选必填' }).click()
+  await expect(fill).toHaveClass(/is-checked/)
+  await expect(fill.locator('input')).toBeDisabled()
+  await members.getByRole('button', { name: '一键保存' }).click()
+  await expect(page.getByText('成员与部门权限已保存', { exact: true })).toBeVisible()
+  const memberSaved = calls.find(c => c.type === 'member' && String(c.memberId) === '30' && c.body.required)
+  expect(memberSaved).toBeTruthy()
+  expect(memberSaved.body.canFill).toBe(true)
+  await noOverflow(page)
+})
+
+test('admin member drawer fits narrow screens with card flags', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 640 }); await login(page); await mockApi(page, 'all', { required: true })
+  await page.goto('/demand/admin')
+  await page.getByRole('button', { name: '成员权限' }).first().click()
+  const members = page.locator('.el-drawer').filter({ hasText: '成员与权限' })
+  const row = members.locator('.member-grant-table .el-table__row').filter({ hasText: '测试经办人' }).first()
+  await expect(row.locator('.member-grant-flags')).toBeVisible()
+  await expect(row.locator('.member-grant-flags .el-checkbox')).toHaveCount(4)
+  await expect(row.locator('.member-grant-flags .el-checkbox').filter({ hasText: '必填' })).toBeVisible()
+  await noOverflow(page)
+  await page.setViewportSize({ width: 1024, height: 768 }); await page.reload()
+  await page.getByRole('button', { name: '成员权限' }).first().click()
+  const desktop = page.locator('.el-drawer').filter({ hasText: '成员与权限' })
+  await expect(desktop.locator('.member-grant-table')).toBeVisible()
+  await expect(desktop.locator('.member-grant-flags')).toHaveCount(0)
+  await expect(desktop.getByRole('button', { name: '移除' }).first()).toBeVisible()
   await noOverflow(page)
 })
 
@@ -1622,7 +1781,7 @@ test('home card shows required state and round deadline', async ({ page }) => {
   const card = page.locator('.collection-grid .demand-card').filter({ hasText: '信息化需求征集' })
   await expect(card.getByText('本人必填', { exact: true })).toBeVisible()
   await expect(card.getByText('未提交', { exact: true })).toBeVisible()
-  await expect(card.getByText(/本轮截止：/)).toBeVisible()
+  await expect(card.getByText(/截止：2026-12-31/)).toBeVisible()
   await expect(card.getByText('匿名提交不计入必填完成', { exact: true })).toBeVisible()
 })
 
@@ -1651,11 +1810,18 @@ test('message center fits desktop and mobile without overflow', async ({ page })
   await page.screenshot({ path: 'test-results/messages-mobile.png', fullPage: true, animations: 'disabled' })
 })
 
-test('admin dingtalk panel saves settings and shows mappings', async ({ page }) => {
+test('standalone dingtalk config page saves app config, settings and mappings', async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 768 }); await login(page); await mockApi(page, 'all')
-  await page.goto('/demand/admin')
-  await page.locator('.el-tabs__item').filter({ hasText: '钉钉推送' }).click()
+  await page.goto('/demand/dingtalk')
+  await expect(page.getByRole('heading', { name: '钉钉配置', exact: true })).toBeVisible()
+  await expect(page.getByText('应用配置', { exact: true })).toBeVisible()
   await expect(page.getByText('应用状态', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '保存应用配置' }).click()
+  await expect(page.getByText('钉钉应用配置已保存', { exact: true })).toBeVisible()
+  const savedConfig = calls.find((call) => call.type === 'saveDingtalkConfig')
+  expect(savedConfig.body.appKey).toBe('ding-test-key')
+  expect(savedConfig.body.agentId).toBe(123456)
+  expect(savedConfig.body.linkBase).toBe('http://example.test')
   await expect(page.getByText('待审批', { exact: true }).first()).toBeVisible()
   await page.getByRole('button', { name: '保存设置' }).click()
   await expect(page.getByText('钉钉推送设置已保存', { exact: true })).toBeVisible()
@@ -1663,13 +1829,17 @@ test('admin dingtalk panel saves settings and shows mappings', async ({ page }) 
   expect(saved.body.enabled).toBe(true)
   expect(saved.body['event.APPROVAL.todo']).toBe(true)
   expect(saved.body['event.REQUIRED.work']).toBe(true)
+  await page.getByRole('button', { name: '设为创建人' }).click()
+  await page.getByRole('button', { name: '确定', exact: true }).click()
+  await expect(page.getByText('待办创建人已更新', { exact: true })).toBeVisible()
+  expect(calls.some((call) => call.type === 'dingtalkUserAction' && call.action === 'creator')).toBeTruthy()
   await page.locator('.el-tabs__item').filter({ hasText: '推送日志' }).click()
   await expect(page.getByText('【瑞玛问卷】待审批', { exact: true }).first()).toBeVisible()
   await noOverflow(page)
 
   await page.setViewportSize({ width: 390, height: 844 }); await page.reload()
-  await page.locator('.el-tabs__item').filter({ hasText: '钉钉推送' }).click()
-  await expect(page.getByText('应用状态', { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '钉钉配置', exact: true })).toBeVisible()
+  await expect(page.getByText('应用配置', { exact: true })).toBeVisible()
   await noOverflow(page)
 })
 
@@ -1766,7 +1936,7 @@ test('admin enables leader approval and disables anonymous', async ({ page }) =>
   const anonymousSwitch = drawer.locator('.el-form-item').filter({ hasText: '允许匿名填写' }).locator('.el-switch')
   await expect(anonymousSwitch).toHaveClass(/is-disabled/)
   await drawer.getByRole('button', { name: '保存配置' }).click()
-  await expect(page.getByText('配置已保存', { exact: true })).toBeVisible()
+  await expect(page.getByText('配置已保存', { exact: true }).first()).toBeVisible()
   const saved = calls.find(c => c.type === 'configure' && c.key === 'A')
   expect(saved.body.approvalMode).toBe('DIRECT')
   expect(saved.body.requiresLeaderApproval).toBe(true)

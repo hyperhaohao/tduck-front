@@ -267,15 +267,16 @@ export default {
       return new DOMParser().parseFromString(value || '', 'text/html').body.textContent || ''
     },
     expired(form) {
-      const ends = [form.endTime, form.roundEndTime]
+      const ends = [form.endTime, form.roundDeadline, form.roundEndTime]
         .filter(Boolean)
         .map((value) => new Date(value).getTime())
         .filter((value) => !Number.isNaN(value))
       return ends.length > 0 && Math.min(...ends) < Date.now()
     },
     deadlineText(form) {
-      if (form.roundEndTime) {
-        return '本轮截止：' + String(form.roundEndTime).replace('T', ' ').substring(0, 16)
+      const roundEnd = form.roundDeadline || form.roundEndTime
+      if (form.roundMode === 'PERIODIC' && roundEnd) {
+        return '本轮截止：' + String(roundEnd).replace('T', ' ').substring(0, 16)
       }
       return form.endTime ? '截止：' + this.date(form.endTime) : '长期有效'
     },

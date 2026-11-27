@@ -32,6 +32,11 @@ export default [
         meta: { requireLogin: true, title: '消息中心' }
       },
       {
+        path: 'dingtalk',
+        component: () => import('@/views/demand/DingTalk'),
+        meta: { requireLogin: true, title: '钉钉配置' }
+      },
+      {
         path: 'manage',
         component: () => import('@/views/demand/Admin'),
         props: { mode: 'manage' },
